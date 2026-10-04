@@ -16,7 +16,7 @@
   .card{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:14px;margin-bottom:14px}
   .card h2{margin:0 0 10px;font-size:.95rem;color:var(--neon);text-transform:uppercase;letter-spacing:1px}
   label{display:block;margin:8px 0 4px;font-size:.85rem}
-  select,input[type=text],button{width:100%;background:#000;color:var(--neon2);border:1px solid var(--neon);border-radius:4px;padding:7px;font-size:.95rem}
+  select,input[type=text],input[type=number],button{width:100%;background:#000;color:var(--neon2);border:1px solid var(--neon);border-radius:4px;padding:7px;font-size:.95rem}
   button{cursor:pointer;margin-top:8px}
   button:hover{background:var(--neon);color:#000}
   input[type=range]{width:100%;accent-color:var(--neon)}
@@ -62,6 +62,9 @@
         <option value="lmb">Left Mouse Button</option>
       </select>
       <p class="note" id="mstat"></p>
+      <label>Fire rate: <span id="msv">133</span> ms per shot</label>
+      <input type="number" id="rpm" min="30" max="3000" step="5" value="450">
+      <p class="note">Rounds per minute (rpm). Set this to your gun's real fire rate: too low and the pull falls behind your shots. Saved per gun.</p>
       <label>Hotkey for On/Off</label>
       <button id="hk" type="button">Click, then press a key</button>
       <p class="note">While On, holding the aim key pulls the mouse against the selected pattern (Windows). The overlay below only changes the preview.</p>
@@ -106,9 +109,12 @@ const all=()=>({...builtin,...custom});
 let tune={};
 try{const t=JSON.parse(localStorage.getItem('torzr1.tune')||'{}');if(t&&typeof t==='object')tune=t}catch(e){}
 const pct=v=>typeof v==='number'&&isFinite(v)?Math.min(200,Math.max(0,v)):100;
-function loadTune(){const t=tune[$('gun').value]||{};$('tx').value=pct(t.x);$('ty').value=pct(t.y);$('txv').textContent=$('tx').value;$('tyv').textContent=$('ty').value}
+const okRpm=v=>typeof v==='number'&&isFinite(v)&&v>=30&&v<=3000;
+function rpmOf(w){const t=tune[$('gun').value]||{};return okRpm(t.rpm)?t.rpm:w.rpm}
+function showRpm(){const v=+$('rpm').value;$('msv').textContent=okRpm(v)?(60000/v).toFixed(0):'?'}
+function loadTune(){const t=tune[$('gun').value]||{},w=all()[$('gun').value];$('tx').value=pct(t.x);$('ty').value=pct(t.y);$('txv').textContent=$('tx').value;$('tyv').textContent=$('ty').value;if(w){$('rpm').value=rpmOf(w)}showRpm()}
 function saveTuneStore(){try{localStorage.setItem('torzr1.tune',JSON.stringify(tune))}catch(e){}}
-function saveTune(){tune[$('gun').value]={x:+$('tx').value,y:+$('ty').value};saveTuneStore()}
+function saveTune(){const k=$('gun').value,old=tune[k]||{};tune[k]={...old,x:+$('tx').value,y:+$('ty').value};saveTuneStore()}
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(custom))}catch(e){}}
 function refresh(sel){const g=$('gun');g.innerHTML='';for(const k in all())g.add(new Option(k+(builtin[k]?'':' ★'),k));if(sel)g.value=sel;loadTune();simulate()}
 
@@ -128,15 +134,16 @@ $('save').onclick=()=>{
   if(!name)return $('info').textContent='Enter a name first (not blank, not "__proto__").';
   const src=pending||all()[$('gun').value];
   if(builtin[name])return $('info').textContent='"'+name+'" is a built-in gun — pick another name.';
-  tune[name]={x:+$('tx').value,y:+$('ty').value};
+  tune[name]=pending?{x:100,y:100,rpm:src.rpm}:{x:+$('tx').value,y:+$('ty').value,rpm:okRpm(+$('rpm').value)?+$('rpm').value:src.rpm};   // imports keep their own rpm, start at 100%
   custom[name]={rpm:src.rpm,pattern:src.pattern};persist();saveTuneStore();pending=null;refresh(name);
 };
 $('del').onclick=()=>{const k=$('gun').value;if(custom[k]){delete custom[k];delete tune[k];persist();saveTuneStore();refresh()}else $('info').textContent='Built-in guns can\'t be deleted.'};
 $('exp').onclick=()=>{const k=$('gun').value,w=all()[k];const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob([JSON.stringify({name:k,...w},null,1)],{type:'application/json'}));a.download=k+'.json';a.click()};
+  a.href=URL.createObjectURL(new Blob([JSON.stringify({name:k,...w,rpm:rpmOf(w)},null,1)],{type:'application/json'}));a.download=k+'.json';a.click()};
 $('acc').oninput=()=>{$('accv').textContent=$('acc').value;simulate()};
 $('comp').onchange=simulate;$('fire').onclick=simulate;$('gun').onchange=()=>{loadTune();simulate()};
 ['tx','ty'].forEach(id=>$(id).oninput=()=>{$(id+'v').textContent=$(id).value;saveTune();simulate()});
+$('rpm').oninput=()=>{showRpm();const v=+$('rpm').value;if(!okRpm(v))return;const k=$('gun').value;tune[k]={...(tune[k]||{}),rpm:v};saveTuneStore();simulate()};
 try{$('smooth').checked=localStorage.getItem('torzr1.smooth')!=='0'}catch(e){}
 $('smooth').onchange=()=>{try{localStorage.setItem('torzr1.smooth',$('smooth').checked?'1':'0')}catch(e){}simulate()};
 
@@ -146,7 +153,7 @@ $('aim').onchange=()=>{try{localStorage.setItem('torzr1.aim',$('aim').value)}cat
 async function pushState(w){
   if(!window.torz)return;
   let ok=false;
-  try{ok=await window.torz.setState({power:$('power').checked,aim:$('aim').value,rpm:w.rpm,pattern:w.pattern,acc:$('acc').value/100,sx:$('tx').value/100,sy:$('ty').value/100,smooth:$('smooth').checked})}catch(e){}
+  try{ok=await window.torz.setState({power:$('power').checked,aim:$('aim').value,rpm:rpmOf(w),pattern:w.pattern,acc:$('acc').value/100,sx:$('tx').value/100,sy:$('ty').value/100,smooth:$('smooth').checked})}catch(e){}
   $('mstat').textContent=ok?'Mouse control: ready.':'Mouse control unavailable (Windows only) — preview only.';
 }
 
@@ -161,7 +168,7 @@ function simulate(){
   w.pattern.forEach(([dx,dy],i)=>{rx+=dx;ry+=dy;if(use){cx-=dx*a*sx;cy-=dy*a*sy}
     const px=230+(rx+cx)*k,py=322+(ry+cy)*k;sim.fillStyle=NEON;sim.shadowColor=NEON;sim.shadowBlur=8;
     sim.beginPath();sim.arc(px,py,4,0,7);sim.fill();sim.shadowBlur=0;sim.fillStyle='#d8f7ff';sim.fillText(i+1,px+7,py)});
-  $('info').textContent=`${w.pattern.length} shots · ${(60000/w.rpm).toFixed(0)} ms/shot · final offset (${(rx+cx).toFixed(1)}, ${(ry+cy).toFixed(1)})`;
+  $('info').textContent=`${w.pattern.length} shots · ${(60000/rpmOf(w)).toFixed(0)} ms/shot · final offset (${(rx+cx).toFixed(1)}, ${(ry+cy).toFixed(1)})`;
 }
 
 // ---- On/Off hotkey ----

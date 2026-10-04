@@ -12,13 +12,14 @@
 #include <iphlpapi.h>
 #include <powrprof.h>
 #include <shlobj.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define S(x) ((int)((x) * g_sc + 0.5))
 #define HIST 60
-#define NTWEAKS 81
+#define NTWEAKS 15
 
 static double g_sc = 1.0;
 static HWND g_hwnd, g_edit;
@@ -29,7 +30,8 @@ static WCHAR g_name[64];
 static WCHAR g_ini[MAX_PATH];
 static int g_page = 0, g_scroll = 0, g_contentH = 0, g_welcome = 0;
 static int g_mx = -1, g_my = -1;
-static WCHAR g_status[200] = L"";
+static WCHAR g_status[400] = L"";
+static HWND g_overlay;
 
 #define RGBW(v) RGB(v, v, v)
 #define C_BG RGB(0, 0, 0)
@@ -40,54 +42,23 @@ static WCHAR g_status[200] = L"";
 #define C_WHITE RGB(255, 255, 255)
 
 // ---------- data ----------
-typedef struct { const WCHAR *name, *desc; int on; } Item;
+typedef struct { const WCHAR *name, *desc; int on, act; } Item;
 typedef struct { const WCHAR *section, *prefix; int n; Item *items; } List;
 
 static Item tweaks[NTWEAKS];
-static WCHAR extraName[NTWEAKS][32];
-static const WCHAR *tw[][2] = {
- {L"Disable Fullscreen Optimizations", L"Stops Windows from interfering with fullscreen games."},
- {L"High Performance Power Plan", L"Keeps your CPU running at full speed."},
- {L"Disable Game DVR", L"Turns off background recording that costs FPS."},
- {L"Disable Xbox Game Bar", L"Removes the overlay that can cause stutters."},
- {L"Set GPU Priority High", L"Gives your game first pick of the graphics card."},
- {L"Disable Core Parking", L"Keeps all CPU cores awake and ready."},
- {L"Set Fortnite CPU Priority", L"Makes Windows favor Fortnite over other apps."},
- {L"Disable Power Throttling", L"Stops Windows slowing the CPU to save power."},
- {L"Optimize Visual Effects", L"Turns off animations to free up resources."},
- {L"Disable Transparency", L"Removes see-through windows to save GPU power."},
- {L"Disable Nagle's Algorithm", L"Sends game data right away for lower ping."},
- {L"Optimize TCP ACK Frequency", L"Cuts small delays in network replies."},
- {L"Flush DNS Cache", L"Clears stale network lookups."},
- {L"Disable Update Delivery", L"Stops your PC uploading updates to others."},
- {L"Disable Mouse Acceleration", L"Makes your aim consistent and predictable."},
- {L"Reduce Input Latency", L"Lowers the delay between click and action."},
- {L"Timer Resolution 0.5ms", L"Makes the system clock more precise."},
- {L"Optimize MSI Mode", L"Speeds up how devices talk to the CPU."},
- {L"Disable HPET", L"Can reduce stutter on some systems."},
- {L"Disable Telemetry", L"Stops Windows sending usage data."},
- {L"Disable Cortana", L"Turns off the voice assistant."},
- {L"Disable Windows Tips", L"Hides tips and suggestions."},
- {L"Clear Shader Cache", L"Removes old graphics files."},
- {L"Disable Hibernation", L"Frees disk space used by hibernate."},
- {L"Disable SysMain", L"Stops background preloading that uses your disk."},
- {L"Disable Background Apps", L"Stops apps running when you're not using them."},
- {L"Disable Startup Delay", L"Makes apps launch at login faster."},
- {L"Disable Search Indexing", L"Reduces background disk activity."},
- {L"Optimize Page File", L"Tunes virtual memory for gaming."},
- {L"Disable Spectre Mitigations", L"Small speed boost, lowers some security protection."},
-};
 static Item games[] = {
- {L"Fortnite - Performance", L"Highest FPS, lowest visuals.", 0},
- {L"Fortnite - Competitive", L"Low input delay, clear visibility.", 0}};
+ {L"Fortnite - Performance", L"Lowest graphics settings, no VSync. Close Fortnite first.", 0, 0},
+ {L"Fortnite - Competitive", L"Low effects but full view distance for spotting enemies.", 0, 0}};
 static Item addons[] = {
- {L"FPS Overlay", L"Show your frame rate on screen.", 0},
- {L"Shader Cache Cleaner", L"Clears old graphics files.", 0},
- {L"Background App Closer", L"Closes apps that slow your game.", 0}};
+ {L"Performance Overlay", L"Shows CPU, GPU and RAM use on screen. Works in Windowed Fullscreen.", 0, 0},
+ {L"Shader Cache Cleaner", L"Deletes old GPU shader caches (first launch after may stutter once).", 0, 1},
+ {L"Background App Closer", L"Closes OneDrive, Teams, Skype and other apps that slow games.", 0, 1},
+ {L"Temp File Cleaner", L"Deletes temporary files to free disk space.", 0, 1},
+ {L"Flush DNS Cache", L"Clears stale network lookups.", 0, 1}};
 static List lists[] = {
  {L"tweaks", L"t", NTWEAKS, tweaks},
  {L"games", L"g", 2, games},
- {L"addons", L"a", 3, addons}};
+ {L"addons", L"a", 5, addons}};
 
 static const WCHAR *navName[] = {L"Home", L"Restore Point", L"Game Library", L"Optimizations", L"Addons", L"Ultimate Mode", L"AI Chat"};
 static const WCHAR *navSub[] = {L"Your PC at a glance", L"Back up first", L"Pick a game", L"Turn tweaks on/off", L"Optional extras", L"Everything at once", L"Quick answers"};
@@ -101,27 +72,19 @@ static void cfgPath(void) {
         swprintf(g_ini, MAX_PATH, L"%ls\\config.ini", dir);
     } else wcscpy(g_ini, L"nero.ini");
 }
-static void saveItem(int l, int i) {
-    WCHAR k[16];
-    swprintf(k, 16, L"%ls%d", lists[l].prefix, i);
-    WritePrivateProfileStringW(lists[l].section, k, lists[l].items[i].on ? L"1" : L"0", g_ini);
-}
 static void loadConfig(void) {
     GetPrivateProfileStringW(L"user", L"name", L"", g_name, 64, g_ini);
-    for (int l = 0; l < 3; l++)
+    for (int l = 1; l < 3; l++)
         for (int i = 0; i < lists[l].n; i++) {
             WCHAR k[16];
             swprintf(k, 16, L"%ls%d", lists[l].prefix, i);
-            lists[l].items[i].on = GetPrivateProfileIntW(lists[l].section, k, 0, g_ini);
+            lists[l].items[i].on = lists[l].items[i].act ? 0 : GetPrivateProfileIntW(lists[l].section, k, 0, g_ini);
         }
 }
 static int appliedCount(void) {
     int c = 0;
     for (int i = 0; i < NTWEAKS; i++) c += tweaks[i].on;
     return c;
-}
-static void setAll(int v) {
-    for (int i = 0; i < NTWEAKS; i++) { tweaks[i].on = v; saveItem(0, i); }
 }
 
 // ---------- live stats ----------
@@ -240,6 +203,8 @@ static DWORD WINAPI restoreThread(LPVOID p) {
 }
 
 // ---------- drawing helpers ----------
+#include "engine.inc"
+
 enum { K_NAV, K_STEP, K_TOG, K_BTN, K_NAME };
 enum { B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
 typedef struct { RECT r; int kind, a, b; } Hit;
@@ -390,9 +355,14 @@ static int pageList(HDC dc, int x, int y, int w, int li, int bulk) {
         RECT r = {x + c * (cw + gap), y + rw * (rh + gap), x + c * (cw + gap) + cw, y + rw * (rh + gap) + rh};
         Item *it = &L->items[i];
         Box(dc, r, C_PANEL, it->on ? C_WHITE : (hovered(r) ? RGBW(120) : RGBW(35)), S(10));
-        Text(dc, it->name, r.left + S(14), r.top + S(12), cw - S(80), fBody, C_WHITE, it->on, DT_SINGLELINE | DT_END_ELLIPSIS);
-        Text(dc, it->desc, r.left + S(14), r.top + S(36), cw - S(80), fSmall, C_DIM, 0, DT_SINGLELINE | DT_END_ELLIPSIS);
-        Switch(dc, r.right - S(54), r.top + (rh - S(20)) / 2, it->on);
+        Text(dc, it->name, r.left + S(14), r.top + S(12), cw - S(100), fBody, C_WHITE, it->on, DT_SINGLELINE | DT_END_ELLIPSIS);
+        Text(dc, it->desc, r.left + S(14), r.top + S(36), cw - S(100), fSmall, C_DIM, 0, DT_SINGLELINE | DT_END_ELLIPSIS);
+        if (it->act) {
+            RECT pb = {r.right - S(76), r.top + (rh - S(28)) / 2, r.right - S(14), r.top + (rh + S(28)) / 2};
+            int hv = hovered(pb);
+            Box(dc, pb, hv ? C_WHITE : RGBW(20), C_WHITE, S(14));
+            Text(dc, L"Run", pb.left, pb.top + S(5), pb.right - pb.left, fSmall, hv ? C_BG : C_WHITE, 0, DT_CENTER | DT_SINGLELINE);
+        } else Switch(dc, r.right - S(54), r.top + (rh - S(20)) / 2, it->on);
         addHit(r, K_TOG, li, i);
     }
     return y + ((L->n + cols - 1) / cols) * (rh + gap) + S(10);
@@ -408,7 +378,8 @@ static int pageRestore(HDC dc, int x, int y, int w) {
 }
 static int pageUltimate(HDC dc, int x, int y, int w) {
     int pw = w > S(720) ? S(720) : w;
-    y += Text(dc, L"Turns on all 81 tweaks for the best possible performance. Make a restore point first so you can undo it.", x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(20);
+    WCHAR ut[200]; swprintf(ut, 200, L"Turns on all %d tweaks for the best possible performance. Make a restore point first so you can undo it.", NTWEAKS);
+    y += Text(dc, ut, x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(20);
     RECT a = {x, y, x + S(200), y + S(42)}, b = {x + S(216), y, x + S(456), y + S(42)};
     Button(dc, a, L"Make backup first", B_RESTORE + 100);
     Button(dc, b, L"Enable Ultimate Mode", B_ULTIMATE);
@@ -472,6 +443,7 @@ static void paint(HDC wdc, int W, int H) {
     else {
         y += Text(dc, titles[g_page], x, y, w, fTitle, C_WHITE, 1, DT_SINGLELINE) + S(6);
         y += Text(dc, taglines[g_page], x, y, w, fBody, C_DIM, 0, DT_WORDBREAK) + S(24);
+        if (g_page >= 2 && g_page <= 4 && g_status[0]) y += Text(dc, g_status, x, y, w, fBody, C_WHITE, 1, DT_WORDBREAK) + S(14);
         switch (g_page) {
             case 1: end = pageRestore(dc, x, y, w); break;
             case 2: end = pageList(dc, x, y, w, 1, 0); break;
@@ -548,6 +520,11 @@ static void acceptName(void) {
     g_welcome = 0; ShowWindow(g_edit, SW_HIDE); SetFocus(g_hwnd);
     InvalidateRect(g_hwnd, NULL, FALSE);
 }
+static int confirmBulk(int on) {
+    WCHAR m[300];
+    swprintf(m, 300, on ? L"This turns on all %d tweaks and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?" : L"This turns off all tweaks and puts your settings back. Continue?", NTWEAKS);
+    return MessageBoxW(g_hwnd, m, L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
+}
 static void click(int mx, int my) {
     POINT p = {mx, my};
     for (int i = nhits - 1; i >= 0; i--) {
@@ -559,11 +536,13 @@ static void click(int mx, int my) {
             case K_NAV: g_page = h->a; g_scroll = 0; break;
             case K_STEP: g_page = h->a; g_scroll = 0; break;
             case K_NAME: showWelcome(); break;
-            case K_TOG: { Item *it = &lists[h->a].items[h->b]; it->on = !it->on; saveItem(h->a, h->b); break; }
+            case K_TOG:
+                if (h->a == 0) tweakToggle(h->b); else if (h->a == 1) gameToggle(h->b); else addonClick(h->b);
+                break;
             case K_BTN:
-                if (h->a == B_ALLON) setAll(1);
-                else if (h->a == B_ALLOFF) setAll(0);
-                else if (h->a == B_ULTIMATE) { setAll(1); g_page = 3; g_scroll = 0; }
+                if (h->a == B_ALLON) { if (confirmBulk(1)) setAll(1); }
+                else if (h->a == B_ALLOFF) { if (confirmBulk(0)) setAll(0); }
+                else if (h->a == B_ULTIMATE) { if (confirmBulk(1)) { setAll(1); g_page = 3; g_scroll = 0; } }
                 else if (h->a == B_RESTORE) { wcscpy(g_status, L"Working... this can take a few seconds."); CreateThread(NULL, 0, restoreThread, NULL, 0, NULL); }
                 else if (h->a == B_RESTORE + 100) { g_page = 1; g_scroll = 0; }
                 else if (h->a == B_WELCOME) acceptName();
@@ -601,7 +580,7 @@ static HBRUSH editBrush;
 static LRESULT CALLBACK wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_CREATE: SetTimer(h, 1, 1000, NULL); return 0;
-    case WM_TIMER: readStats(); InvalidateRect(h, NULL, FALSE); return 0;
+    case WM_TIMER: readStats(); InvalidateRect(h, NULL, FALSE); if (g_overlay) InvalidateRect(g_overlay, NULL, FALSE); return 0;
     case WM_APP: InvalidateRect(h, NULL, FALSE); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {
@@ -648,15 +627,24 @@ static void loadLogo(void) {
     if (g_logo) memcpy(bits, d + 2, (size_t)g_logoW * g_logoH * 4);
 }
 
+static void selfTest(void) {
+    FILE *f = _wfopen(L"selftest.log", L"w");
+    for (int i = 0; i < NTWEAKS; i++) {
+        int before = isTweakOn(i);
+        applyTweak(i); int on = isTweakOn(i);
+        revertTweak(i); int off = isTweakOn(i);
+        fwprintf(f, L"%-36ls before=%d apply->%d revert->%d  %ls\n", tdefs[i].name, before, on, off, (on == 1 && off == before) || (on == 1 && off == 0) ? L"OK" : L"CHECK");
+    }
+    fclose(f);
+}
 int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
-    (void)hp; (void)cmd;
+    (void)hp;
+    if (cmd && wcsstr(cmd, L"--selftest")) { cfgPath(); selfTest(); return 0; }
     SetProcessDPIAware();
     HDC sd = GetDC(NULL); g_sc = GetDeviceCaps(sd, LOGPIXELSX) / 96.0; ReleaseDC(NULL, sd);
-    for (int i = 0; i < NTWEAKS; i++) {
-        if (i < (int)(sizeof tw / sizeof tw[0])) { tweaks[i].name = tw[i][0]; tweaks[i].desc = tw[i][1]; }
-        else { swprintf(extraName[i], 32, L"Advanced Tweak #%d", i + 1); tweaks[i].name = extraName[i]; tweaks[i].desc = L"Extra fine-tuning for experienced users."; }
-    }
+    for (int i = 0; i < NTWEAKS; i++) { tweaks[i].name = tdefs[i].name; tweaks[i].desc = tdefs[i].desc; }
     cfgPath(); loadConfig(); loadLogo();
+    for (int i = 0; i < NTWEAKS; i++) tweaks[i].on = isTweakOn(i);
     fTitle = mkFont(30, FW_SEMIBOLD); fH2 = mkFont(13, FW_BOLD); fBody = mkFont(15, FW_SEMIBOLD);
     fSmall = mkFont(12, FW_NORMAL); fStat = mkFont(23, FW_SEMIBOLD); fNav = mkFont(16, FW_SEMIBOLD);
     fNavSub = mkFont(11, FW_NORMAL); fBtn = mkFont(14, FW_SEMIBOLD);
@@ -667,6 +655,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     wc.hIcon = LoadIcon(hi, MAKEINTRESOURCE(1)); wc.lpszClassName = L"NeroTweaks";
     wc.hbrBackground = CreateSolidBrush(C_BG);
     RegisterClassW(&wc);
+    WNDCLASSW oc = {0}; oc.lpfnWndProc = overlayProc; oc.hInstance = hi; oc.lpszClassName = L"NeroOverlay"; oc.hbrBackground = CreateSolidBrush(C_BG);
+    RegisterClassW(&oc);
     g_hwnd = CreateWindowW(L"NeroTweaks", L"Nero Tweaks", WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT, S(1220), S(800), NULL, NULL, hi, NULL);
     g_edit = CreateWindowW(L"EDIT", L"", WS_CHILD | ES_CENTER | ES_AUTOHSCROLL | WS_BORDER, 0, 0, 10, 10, g_hwnd, NULL, hi, NULL);
     SendMessageW(g_edit, WM_SETFONT, (WPARAM)fStat, TRUE);
@@ -675,6 +665,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     ShowWindow(g_hwnd, show); UpdateWindow(g_hwnd);
     SetWindowPos(g_hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
     st.cpuTemp = -1;
+    if (GetPrivateProfileIntW(L"addons", L"a0", 0, g_ini)) { addons[0].on = 1; overlaySet(1); }
     readStats();
     CreateThread(NULL, 0, gpuThread, NULL, 0, NULL);
     if (!g_name[0]) showWelcome();

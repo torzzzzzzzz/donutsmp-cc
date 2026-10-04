@@ -8,12 +8,24 @@
     "start": "electron .",
     "build": "electron-builder --win"
   },
-  "dependencies": { "systeminformation": "^5.23.0" },
-  "devDependencies": { "electron": "^33.0.0", "electron-builder": "^25.0.0" },
+  "dependencies": {
+    "systeminformation": "^5.23.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
   "build": {
     "appId": "com.nero.tweaks",
     "productName": "Nero Tweaks",
-    "files": ["main.js", "preload.js", "src/**/*"],
-    "win": { "target": "nsis" }
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    }
   }
 }

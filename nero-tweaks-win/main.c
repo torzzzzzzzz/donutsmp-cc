@@ -15,6 +15,7 @@
 #include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 
 #define S(x) ((int)((x) * g_sc + 0.5))
@@ -478,6 +479,94 @@ static void layoutEdit(int W, int H) {
     MoveWindow(g_edit, x + S(30), y + S(190), bw - S(60), S(36), TRUE);
 }
 
+
+// ---------- "Pro unlocked" celebration ----------
+static int g_anim; static DWORD g_animStart;
+#define ANIM_MS 4600
+static double easeOut(double x) { if (x < 0) x = 0; if (x > 1) x = 1; return 1 - pow(1 - x, 3); }
+static double easeBack(double x) { if (x < 0) x = 0; if (x > 1) x = 1; double c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * pow(x - 1, 3) + c1 * pow(x - 1, 2); }
+static void fillAlpha(HDC dc, int W, int H, int v, int a) {
+    if (a <= 0) return;
+    if (a > 255) a = 255;
+    HDC m = CreateCompatibleDC(dc); HBITMAP b = CreateCompatibleBitmap(dc, 1, 1); HGDIOBJ o = SelectObject(m, b);
+    SetPixel(m, 0, 0, RGB(v, v, v));
+    BLENDFUNCTION bf = {AC_SRC_OVER, 0, (BYTE)a, 0};
+    AlphaBlend(dc, 0, 0, W, H, m, 0, 0, 1, 1, bf);
+    SelectObject(m, o); DeleteObject(b); DeleteDC(m);
+}
+static void disc(HDC dc, int cx, int cy, int r, int v) {
+    HBRUSH b = CreateSolidBrush(RGBW(v)); HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, GetStockObject(NULL_PEN));
+    Ellipse(dc, cx - r, cy - r, cx + r, cy + r); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(b);
+}
+static DWORD WINAPI chimeThread(LPVOID p) {
+    (void)p; int f[] = {523, 659, 784, 1047, 1319}, d[] = {90, 90, 90, 130, 480};
+    for (int i = 0; i < 5; i++) Beep(f[i], d[i]);
+    return 0;
+}
+static void startUnlockAnim(void) {
+    g_anim = 1; g_animStart = GetTickCount();
+    SetTimer(g_hwnd, 2, 16, NULL);
+    CreateThread(NULL, 0, chimeThread, NULL, 0, NULL);
+}
+static void drawUnlock(HDC dc, int W, int H) {
+    double t = (GetTickCount() - g_animStart) / 1000.0;
+    double f = t > 4.0 ? (4.6 - t) / 0.6 : 1; if (f < 0) f = 0;
+    int cx = W / 2, cy = H / 2 - S(40);
+    fillAlpha(dc, W, H, 0, (int)(255 * 0.97 * f * (t < 0.25 ? t / 0.25 : 1)));
+    // glow behind the title
+    double gr = easeOut(t / 0.9);
+    for (int i = 9; i >= 1; i--) disc(dc, cx, cy + S(10), (int)(S(330) * gr * i / 9), (int)(i < 9 ? (9 - i) * 6 * f : 0));
+    // rotating light rays
+    double rot = t * 0.4, len = S(60) + easeOut(t / 1.3) * (W > H ? W : H) * 0.75;
+    for (int i = 0; i < 28; i++) {
+        double a = rot + i * 6.2831853 / 28, hw = (i % 2 ? 0.035 : 0.06), L = len * (i % 2 ? 0.8 : 1.0);
+        POINT p[3] = {{cx, cy + S(10)}, {cx + (int)(cos(a - hw) * L), cy + S(10) + (int)(sin(a - hw) * L)}, {cx + (int)(cos(a + hw) * L), cy + S(10) + (int)(sin(a + hw) * L)}};
+        int c = (int)((i % 2 ? 14 : 30) * f);
+        HBRUSH b = CreateSolidBrush(RGBW(c)); HGDIOBJ ob = SelectObject(dc, b), op = SelectObject(dc, GetStockObject(NULL_PEN));
+        Polygon(dc, p, 3); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(b);
+    }
+    // shockwave rings
+    for (int k = 0; k < 3; k++) {
+        double tk = t - 0.05 - 0.28 * k;
+        if (tk <= 0 || tk >= 1.7) continue;
+        double r = easeOut(tk / 1.7) * S(560), b = (1 - tk / 1.7) * f;
+        int wd[3] = {S(9), S(5), S(2)}; double lv[3] = {38, 110, 255};
+        for (int j = 0; j < 3; j++) {
+            HPEN pn = CreatePen(PS_SOLID, wd[j], RGBW((int)(lv[j] * b)));
+            HGDIOBJ op = SelectObject(dc, pn), ob = SelectObject(dc, GetStockObject(NULL_BRUSH));
+            Ellipse(dc, cx - (int)r, cy + S(10) - (int)r, cx + (int)r, cy + S(10) + (int)r);
+            SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(pn);
+        }
+    }
+    // sparks
+    static double pa[120], ps[120], pl[120], pz[120]; static int pk[120], inited;
+    if (!inited) { srand(7); for (int i = 0; i < 120; i++) { pa[i] = rand() / (double)RAND_MAX * 6.2831853; ps[i] = 120 + rand() % 620; pl[i] = 1.4 + rand() / (double)RAND_MAX * 2.2; pz[i] = 2 + rand() % 4; pk[i] = rand() % 2; } inited = 1; }
+    double age = t - 0.12;
+    if (age > 0) for (int i = 0; i < 120; i++) {
+        double b = (1 - age / pl[i]) * f; if (b <= 0) continue;
+        double dist = ps[i] * easeOut(age / 2.2) * g_sc;
+        int px = cx + (int)(cos(pa[i]) * dist), py = cy + S(10) + (int)(sin(pa[i]) * dist + age * age * S(70));
+        int sz = S((int)pz[i]), v = (int)(255 * b);
+        if (pk[i]) { POINT d[4] = {{px, py - sz * 2}, {px + sz, py}, {px, py + sz * 2}, {px - sz, py}}; HBRUSH br = CreateSolidBrush(RGBW(v)); HGDIOBJ ob = SelectObject(dc, br), op = SelectObject(dc, GetStockObject(NULL_PEN)); Polygon(dc, d, 4); SelectObject(dc, ob); SelectObject(dc, op); DeleteObject(br); }
+        else disc(dc, px, py, sz, v);
+    }
+    // logo + text
+    if (t > 0.3) drawLogo(dc, cx - S(130), cy - S(190), S(260));
+    if (t > 0.5) {
+        double p = (t - 0.5) / 0.55; int px = (int)(S(66) * easeBack(p)); if (px < 2) px = 2;
+        HFONT big = CreateFontW(-px, 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
+        int v = (int)(255 * f);
+        Text(dc, L"PRO UNLOCKED", 0, cy + S(20) + (S(66) - px) / 2, W, big, RGBW(v), 1, DT_CENTER | DT_SINGLELINE);
+        DeleteObject(big);
+    }
+    if (t > 1.3) {
+        double b = (t - 1.3) / 0.6; if (b > 1) b = 1; b *= f;
+        Text(dc, L"WELCOME TO NERO TWEAKS PRO", 0, cy + S(112), W, fNav, RGBW((int)(235 * b)), 1, DT_CENTER | DT_SINGLELINE);
+        Text(dc, L"Every tweak, profile and addon is now yours.", 0, cy + S(146), W, fBody, RGBW((int)(150 * b)), 0, DT_CENTER | DT_SINGLELINE);
+    }
+    if (t > 2.2) Text(dc, L"click anywhere to continue", 0, H - S(60), W, fSmall, RGBW((int)(90 * f)), 0, DT_CENTER | DT_SINGLELINE);
+}
+
 static void paint(HDC wdc, int W, int H) {
     HDC dc = CreateCompatibleDC(wdc);
     HBITMAP bmp = CreateCompatibleBitmap(wdc, W, H);
@@ -556,6 +645,7 @@ static void paint(HDC wdc, int W, int H) {
         RECT b = {bx + S(30), by + S(240), bx + bw - S(30), by + S(282)};
         Button(dc, b, L"Let's go", B_WELCOME);
     }
+    if (g_anim) drawUnlock(dc, W, H);
     BitBlt(wdc, 0, 0, W, H, dc, 0, 0, SRCCOPY);
     SelectObject(dc, obmp); DeleteObject(bmp); DeleteDC(dc);
 }
@@ -602,6 +692,7 @@ static void activate(void) {
         WritePrivateProfileStringW(L"license", L"key", code, g_ini);
         g_pro = 1; SetWindowTextW(g_keyEdit, L""); updateTitle();
         wcscpy(g_status, L"Pro unlocked on this PC. Thank you!");
+        startUnlockAnim();
     } else wcscpy(g_status, L"That code isn't valid for this PC. Check it was made for the PC ID shown here.");
 }
 static int confirmBulk(int on) {
@@ -612,6 +703,7 @@ static int confirmBulk(int on) {
 }
 static void click(int mx, int my) {
     POINT p = {mx, my};
+    if (g_anim) { if (GetTickCount() - g_animStart > 1500) { g_anim = 0; KillTimer(g_hwnd, 2); InvalidateRect(g_hwnd, NULL, FALSE); } return; }
     for (int i = nhits - 1; i >= 0; i--) {
         Hit *h = &hits[i];
         if (!PtInRect(&h->r, p)) continue;
@@ -675,7 +767,12 @@ static HBRUSH editBrush;
 static LRESULT CALLBACK wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_CREATE: SetTimer(h, 1, 1000, NULL); return 0;
-    case WM_TIMER: readStats(); InvalidateRect(h, NULL, FALSE); if (g_overlay) InvalidateRect(g_overlay, NULL, FALSE); return 0;
+    case WM_TIMER:
+        if (w == 2) {
+            if (GetTickCount() - g_animStart > ANIM_MS) { g_anim = 0; KillTimer(h, 2); }
+            InvalidateRect(h, NULL, FALSE); return 0;
+        }
+        readStats(); InvalidateRect(h, NULL, FALSE); if (g_overlay) InvalidateRect(g_overlay, NULL, FALSE); return 0;
     case WM_APP: InvalidateRect(h, NULL, FALSE); return 0;
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: {

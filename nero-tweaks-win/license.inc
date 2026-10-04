@@ -5,7 +5,7 @@
 #include <bcrypt.h>
 #include "pubkey.inc"
 
-#define BUY_INFO L"To buy: contact the seller, send them your PC ID and they will reply with your Pro code."
+#define BUY_INFO L"To buy Pro: DM OddChoices on Discord, send them your PC ID above, and they will reply with your Pro code."
 
 static int g_pro;
 static WCHAR g_machine[32];

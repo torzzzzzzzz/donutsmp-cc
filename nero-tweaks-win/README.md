@@ -21,7 +21,7 @@ Tweaks tagged FPS are the ones that help frame rate; "Apply FPS preset" turns on
 Free works forever. Pro is unlocked by a code that only works on the PC it was made for.
 
 1. Customer opens **Get Pro** in the app, clicks **Copy ID** and sends you the PC ID (`NERO-XXXX-XXXX-XXXX-XXXX`) with payment.
-2. You run: `python3 tools/keygen.py nero_private_key.pem NERO-XXXX-XXXX-XXXX-XXXX` and send back the code it prints.
+2. Put `tools/NeroCodeMaker.exe` and your secret `nero_private_key.bin` in one folder, double-click NeroCodeMaker.exe, paste their PC ID, and send back the code it prints (it is also copied to your clipboard). No Python needed. (`tools/keygen.py` does the same from the .pem if you prefer.)
 3. Customer pastes it into the app and clicks **Activate Pro**.
 
 The code is a signature of that PC's ID, so a friend with a different PC can't use it.

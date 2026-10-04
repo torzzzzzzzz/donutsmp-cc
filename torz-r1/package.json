@@ -4,14 +4,59 @@
   "description": "Torz R1 recoil simulator",
   "author": "Torz",
   "main": "main.js",
-  "scripts": { "start": "electron .", "test": "node recoil.test.js", "dist": "electron-builder --win portable" },
-  "dependencies": { "koffi": "^2.16.3" },
-  "devDependencies": { "electron": "^31.0.0", "electron-builder": "^24.13.3" },
+  "scripts": {
+    "start": "electron .",
+    "test": "node pattern.test.js && node recoil.test.js",
+    "dist": "electron-builder --win",
+    "dist:installer": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable"
+  },
+  "dependencies": {
+    "koffi": "^2.16.3"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
   "build": {
     "appId": "com.torz.r1",
     "productName": "Torz R1",
-    "directories": { "output": "release" },
-    "asarUnpack": ["**/node_modules/koffi/**"],
-    "win": { "icon": "logo.png" }
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "recoil.js",
+      "pattern.js",
+      "torz-r1.html",
+      "logo.png",
+      "icon.png",
+      "package.json",
+      "!**/node_modules/koffi/build/koffi/!(win32_x64)/**"
+    ],
+    "asarUnpack": [
+      "**/node_modules/koffi/**"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Torz R1",
+      "artifactName": "Torz-R1-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Torz-R1-${version}-portable.${ext}"
+    }
   }
 }

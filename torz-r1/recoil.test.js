@@ -9,52 +9,56 @@ function rig(initial) {
   const native = { held: vk => keys[vk], move: (dx, dy) => moves.push([dx, dy]) };
   const eng = createEngine(native, { now: () => t });
   eng.configure(initial);
-  return { keys, moves, eng, at(ms) { t = ms; eng.tick(); } };
+  const both = () => { keys[VK_LBUTTON] = keys[VK_RBUTTON] = true; };
+  return { keys, moves, eng, both, at(ms) { t = ms; eng.tick(); } };
 }
-const base = { power: true, aim: 'both', rpm: 600, acc: 1, pattern: [[0, -4], [1, -2], [0, -1]] };
+const sum = m => m.reduce(([a, b], [c, d]) => [a + c, b + d], [0, 0]);
+const base = { power: true, aim: 'both', rpm: 600, acc: 1, smooth: false, pattern: [[0, -4], [1, -2], [0, -1]] };
 
-{ // nothing happens until both buttons are down
-  const r = rig(base);
-  r.at(0); r.keys[VK_LBUTTON] = true; r.at(10);
-  assert.deepStrictEqual(r.moves, []);
-}
-{ // hold left+right: one compensating step per shot (100 ms @ 600 rpm), opposite sign to the pattern
-  const r = rig(base);
-  r.keys[VK_LBUTTON] = r.keys[VK_RBUTTON] = true;
-  r.at(0); r.at(50); r.at(100); r.at(150); r.at(200); r.at(300); r.at(400);
-  assert.deepStrictEqual(r.moves, [[0, 4], [-1, 2], [0, 1]]);   // +dy = pull down
-}
-{ // releasing then pressing again restarts the pattern
-  const r = rig(base);
-  r.keys[VK_LBUTTON] = r.keys[VK_RBUTTON] = true;
-  r.at(0); r.keys[VK_RBUTTON] = false; r.at(100); r.keys[VK_RBUTTON] = true; r.at(500);
-  assert.deepStrictEqual(r.moves, [[0, 4], [0, 4]]);
-}
-{ // left-only aim key
-  const r = rig({ ...base, aim: 'lmb' });
-  r.keys[VK_LBUTTON] = true; r.at(0);
-  assert.deepStrictEqual(r.moves, [[0, 4]]);
-}
-{ // power off
-  const r = rig({ ...base, power: false });
-  r.keys[VK_LBUTTON] = r.keys[VK_RBUTTON] = true; r.at(0);
-  assert.deepStrictEqual(r.moves, []);
-}
-{ // accuracy scales strength and sub-pixel remainders are carried, not lost
-  const r = rig({ ...base, acc: 0.5, pattern: [[0, -1], [0, -1], [0, -1], [0, -1]] });
-  r.keys[VK_LBUTTON] = r.keys[VK_RBUTTON] = true;
+// ---- step mode (smooth:false): whole shot lands at the start of its interval ----
+{ const r = rig(base); r.at(0); r.keys[VK_LBUTTON] = true; r.at(10);           // only left held -> nothing
+  assert.deepStrictEqual(r.moves, []); }
+{ const r = rig(base); r.both();                                                // 100 ms/shot @ 600 rpm
+  [0, 50, 100, 150, 200, 300, 400].forEach(t => r.at(t));
+  assert.deepStrictEqual(r.moves, [[0, 4], [-1, 2], [0, 1]]); }                // +dy = pull down
+{ const r = rig(base); r.both(); r.at(0); r.keys[VK_RBUTTON] = false; r.at(100); r.keys[VK_RBUTTON] = true; r.at(500);
+  assert.deepStrictEqual(r.moves, [[0, 4], [0, 4]]); }                          // release + press restarts
+{ const r = rig({ ...base, aim: 'lmb' }); r.keys[VK_LBUTTON] = true; r.at(0);
+  assert.deepStrictEqual(r.moves, [[0, 4]]); }
+{ const r = rig({ ...base, power: false }); r.both(); r.at(0);
+  assert.deepStrictEqual(r.moves, []); }
+{ const r = rig({ ...base, acc: 0.5, pattern: [[0, -1], [0, -1], [0, -1], [0, -1]] }); r.both();
   for (let t = 0; t <= 400; t += 100) r.at(t);
-  assert.deepStrictEqual(r.moves, [[0, 1], [0, 1]]);
-}
-{ // a throttled timer (big gap) does not dump the whole pattern at once
-  const r = rig(base);
-  r.keys[VK_LBUTTON] = r.keys[VK_RBUTTON] = true;
-  r.at(0); r.at(5000);
-  assert.strictEqual(r.moves.length, 2);
-}
-{ // bad input is ignored instead of crashing
-  const r = rig({ power: true, pattern: 'nope', rpm: 'x', acc: 99 });
-  r.keys[VK_LBUTTON] = r.keys[VK_RBUTTON] = true; r.at(0);
-  assert.deepStrictEqual(r.moves, []);
-}
+  assert.deepStrictEqual(r.moves, [[0, 1], [0, 1]]); }                          // sub-pixel remainder carried
+{ const r = rig(base); r.both(); r.at(0); r.at(5000);                           // throttled timer: no burst
+  assert.strictEqual(r.moves.length, 2); }
+
+// ---- smooth mode: each shot's pull is spread across its interval ----
+{ const r = rig({ ...base, smooth: true, pattern: [[0, -10]] }); r.both();
+  r.at(0); assert.deepStrictEqual(r.moves, []);                                 // nothing yet at t0
+  r.at(50); assert.deepStrictEqual(r.moves, [[0, 5]]);                          // halfway through the shot
+  r.at(100); assert.deepStrictEqual(r.moves, [[0, 5], [0, 5]]);
+  r.at(150); assert.strictEqual(r.moves.length, 2); }                           // pattern over
+{ const pat = [[0, -6], [2, -4], [-1, -5], [0, -3]];                            // 1 kHz ticks, whole pattern
+  const r = rig({ ...base, smooth: true, rpm: 600, pattern: pat }); r.both();
+  for (let t = 0; t <= 500; t++) r.at(t);
+  const [sx, sy] = sum(r.moves);
+  assert.ok(Math.abs(sx - -1) < 1 && Math.abs(sy - 18) < 1, `total ${sx},${sy}`);   // = -(sum of kicks)
+  assert.ok(r.moves.length >= 15, 'many 1px moves (' + r.moves.length + '), not 4 big jumps');
+  assert.ok(Math.max(...r.moves.map(m => Math.abs(m[1]))) <= 1, 'no single move bigger than 1px at 1 kHz'); }
+
+// ---- per-axis strength ----
+{ const r = rig({ ...base, pattern: [[4, -4]], sx: 0.5, sy: 2 }); r.both(); r.at(0);
+  assert.deepStrictEqual(r.moves, [[-2, 8]]); }
+{ const r = rig({ ...base, pattern: [[4, -4]], sx: 0, sy: 1 }); r.both(); r.at(0);
+  assert.deepStrictEqual(r.moves, [[0, 4]]); }
+
+// ---- bad input never reaches the mouse ----
+{ const r = rig({ power: true, pattern: 'nope', rpm: 'x', acc: 99 }); r.both(); r.at(0);
+  assert.deepStrictEqual(r.moves, []); }
+{ const r = rig({ ...base, pattern: [[1e9, -1e9]] }); r.both(); r.at(0);       // clamped to ±200
+  assert.deepStrictEqual(r.moves, [[-200, 200]]); }
+{ const r = rig({ ...base, pattern: [[NaN, 1], [0, -2]] }); r.both(); r.at(0);  // NaN shot dropped
+  assert.deepStrictEqual(r.moves, [[0, 2]]); }
+
 console.log('all recoil engine tests passed');

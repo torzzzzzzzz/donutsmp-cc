@@ -12,4 +12,6 @@ sticky keys popup, Fortnite CPU priority, background apps, hibernation.
 Game Library edits Fortnite's GameUserSettings.ini (backed up, restored when turned off).
 Addons: performance overlay, shader cache cleaner, background app closer, temp cleaner, DNS flush.
 
+Tweaks tagged FPS are the ones that help frame rate; "Apply FPS preset" turns on just those.
+
 `NeroTweaks.exe --selftest` applies and reverts every tweak and writes selftest.log.

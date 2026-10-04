@@ -88,13 +88,35 @@ static int appliedCount(void) {
 }
 
 // ---------- live stats ----------
-typedef struct { double cpuTemp, cpuLoad, cpuSpeed, gpuTemp, gpuLoad, gpuMem, diskFree, diskUse, ram, netTotal, netSent, netRecv; } Stats;
+typedef struct { double cpuMax, cpuTemp, cpuLoad, cpuSpeed, gpuTemp, gpuLoad, gpuMem, diskFree, diskUse, ram, netTotal, netSent, netRecv; } Stats;
 static Stats st;
 static volatile LONG gpuT = -1, gpuU = -1, gpuM = -1;
 static float hist[5][HIST];
 
 typedef struct { ULONG Number, MaxMhz, CurrentMhz, MhzLimit, MaxIdleState, CurrentIdleState; } PPI;
+typedef struct { LARGE_INTEGER Idle, Kernel, User, Rsv[2]; ULONG Rsv2; } SPPI;
+typedef LONG (NTAPI *NtQSI)(ULONG, PVOID, ULONG, PULONG);
+static void readCores(void) {
+    static NtQSI q; static SPPI prev[256]; static int init;
+    if (!q) q = (NtQSI)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQuerySystemInformation");
+    if (!q) return;
+    SYSTEM_INFO si; GetSystemInfo(&si);
+    int n = (int)si.dwNumberOfProcessors; if (n > 256) n = 256;
+    SPPI cur[256]; ULONG got = 0;
+    if (q(8, cur, (ULONG)(n * sizeof(SPPI)), &got) != 0) return;
+    n = (int)(got / sizeof(SPPI));
+    double mx = 0;
+    if (init) for (int i = 0; i < n; i++) {
+        double dI = (double)(cur[i].Idle.QuadPart - prev[i].Idle.QuadPart);
+        double dT = (double)((cur[i].Kernel.QuadPart - prev[i].Kernel.QuadPart) + (cur[i].User.QuadPart - prev[i].User.QuadPart));
+        double l = dT > 0 ? 100.0 * (dT - dI) / dT : 0;
+        if (l > mx) mx = l;
+    }
+    memcpy(prev, cur, n * sizeof(SPPI)); init = 1;
+    st.cpuMax = mx;
+}
 static void readCpu(void) {
+    readCores();
     static ULONGLONG pi, pk, pu; static int init;
     FILETIME i, k, u;
     if (!GetSystemTimes(&i, &k, &u)) return;
@@ -150,7 +172,7 @@ static void readStats(void) {
         st.diskUse = 100.0 * (1.0 - (double)fr.QuadPart / (double)tot.QuadPart);
     }
     st.gpuTemp = gpuT; st.gpuLoad = gpuU; st.gpuMem = gpuM >= 0 ? gpuM / 1024.0 : -1;
-    double v[5] = {st.cpuLoad / 100, st.gpuLoad >= 0 ? st.gpuLoad / 100 : 0, st.diskUse / 100, st.ram / 100, st.netTotal / 100};
+    double v[5] = {st.cpuMax / 100, st.gpuLoad >= 0 ? st.gpuLoad / 100 : 0, st.diskUse / 100, st.ram / 100, st.netTotal / 100};
     if (v[4] > 1) v[4] = 1;
     for (int c = 0; c < 5; c++) {
         memmove(hist[c], hist[c] + 1, (HIST - 1) * sizeof(float));
@@ -206,7 +228,7 @@ static DWORD WINAPI restoreThread(LPVOID p) {
 #include "engine.inc"
 
 enum { K_NAV, K_STEP, K_TOG, K_BTN, K_NAME };
-enum { B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
+enum { B_FPS, B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
 typedef struct { RECT r; int kind, a, b; } Hit;
 static Hit hits[400]; static int nhits;
 static void addHit(RECT r, int kind, int a, int b) {
@@ -323,13 +345,13 @@ static int pageHome(HDC dc, int x, int y, int w) {
     }
     y += ch + S(30);
     y += Text(dc, L"YOUR PC RIGHT NOW", x, y, w, fH2, RGBW(210), 1, DT_SINGLELINE) + S(12);
-    Field cpu[] = {{L"Temperature", &st.cpuTemp, 0, L"\u00b0C"}, {L"Usage", &st.cpuLoad, 0, L"%"}, {L"Speed", &st.cpuSpeed, 2, L" GHz"}};
+    Field cpu[] = {{L"Usage", &st.cpuLoad, 0, L"%"}, {L"Busiest core", &st.cpuMax, 0, L"%"}};
     Field gpu[] = {{L"Temperature", &st.gpuTemp, 0, L"\u00b0C"}, {L"Usage", &st.gpuLoad, 0, L"%"}, {L"Memory", &st.gpuMem, 1, L" GB"}};
     Field dsk[] = {{L"Used", &st.diskUse, 0, L"%"}, {L"Free", &st.diskFree, 0, L" GB"}};
     Field ram[] = {{L"Usage", &st.ram, 0, L"%"}};
     Field net[] = {{L"Total", &st.netTotal, 1, L" Mbps"}, {L"Sent", &st.netSent, 1, L" Mbps"}, {L"Received", &st.netRecv, 1, L" Mbps"}};
     const WCHAR *titles[5] = {L"PROCESSOR", L"GRAPHICS CARD", L"DISK", L"RAM", L"NETWORK"};
-    Field *fs[5] = {cpu, gpu, dsk, ram, net}; int nfs[5] = {3, 3, 2, 1, 3};
+    Field *fs[5] = {cpu, gpu, dsk, ram, net}; int nfs[5] = {2, 3, 2, 1, 3};
     int cols = (w + gap) / (S(300) + gap); if (cols < 1) cols = 1; if (cols > 3) cols = 3;
     cw = (w - gap * (cols - 1)) / cols; ch = S(170);
     for (int i = 0; i < 5; i++) {
@@ -338,15 +360,15 @@ static int pageHome(HDC dc, int x, int y, int w) {
         Card(dc, r, titles[i], fs[i], nfs[i], hist[i]);
     }
     y += ((5 + cols - 1) / cols) * (ch + gap);
-    y += Text(dc, L"Temperatures need a sensor driver Windows does not provide, so CPU temp shows --. GPU stats show for NVIDIA cards (via nvidia-smi).", x, y, w, fSmall, RGBW(100), 0, DT_WORDBREAK) + S(20);
+    y += Text(dc, L"Busiest core matters for Fortnite: if it sits near 100% while total CPU looks low, your CPU is the limit. The graph shows the busiest core. GPU stats show for NVIDIA cards only.", x, y, w, fSmall, RGBW(100), 0, DT_WORDBREAK) + S(20);
     return y;
 }
 
 static int pageList(HDC dc, int x, int y, int w, int li, int bulk) {
     List *L = &lists[li];
     if (bulk) {
-        RECT a = {x, y, x + S(150), y + S(40)}, b = {x + S(166), y, x + S(316), y + S(40)};
-        Button(dc, a, L"Turn all on", B_ALLON); Button(dc, b, L"Turn all off", B_ALLOFF);
+        RECT f = {x, y, x + S(200), y + S(40)}, a = {x + S(216), y, x + S(366), y + S(40)}, b = {x + S(382), y, x + S(532), y + S(40)};
+        Button(dc, f, L"Apply FPS preset", B_FPS); Button(dc, a, L"Turn all on", B_ALLON); Button(dc, b, L"Turn all off", B_ALLOFF);
         y += S(60);
     }
     int cols = w >= S(760) ? 2 : 1, gap = S(10), cw = (w - gap * (cols - 1)) / cols, rh = S(66);
@@ -356,6 +378,11 @@ static int pageList(HDC dc, int x, int y, int w, int li, int bulk) {
         Item *it = &L->items[i];
         Box(dc, r, C_PANEL, it->on ? C_WHITE : (hovered(r) ? RGBW(120) : RGBW(35)), S(10));
         Text(dc, it->name, r.left + S(14), r.top + S(12), cw - S(100), fBody, C_WHITE, it->on, DT_SINGLELINE | DT_END_ELLIPSIS);
+        if (li == 0 && isRec(i)) {
+            SIZE sz; SelectObject(dc, fBody); GetTextExtentPoint32W(dc, it->name, (int)wcslen(it->name), &sz);
+            int tx = r.left + S(14) + sz.cx + S(10);
+            if (tx + S(40) < r.right - S(60)) Text(dc, L"FPS", tx, r.top + S(14), S(40), fSmall, RGBW(200), 1, DT_SINGLELINE);
+        }
         Text(dc, it->desc, r.left + S(14), r.top + S(36), cw - S(100), fSmall, C_DIM, 0, DT_SINGLELINE | DT_END_ELLIPSIS);
         if (it->act) {
             RECT pb = {r.right - S(76), r.top + (rh - S(28)) / 2, r.right - S(14), r.top + (rh + S(28)) / 2};
@@ -437,7 +464,7 @@ static void paint(HDC wdc, int W, int H) {
     HRGN clip = CreateRectRgn(sw, 0, W, H); SelectClipRgn(dc, clip); DeleteObject(clip);
     int y = S(34) - g_scroll;
     const WCHAR *titles[] = {NULL, L"Restore Point", L"Game Library", L"Optimizations", L"Addons", L"Ultimate Mode", L"AI Chat"};
-    const WCHAR *taglines[] = {NULL, L"A backup of your settings. If anything feels off, you can go back.", L"Choose which game profile to optimize.", L"Click any tweak to turn it on or off.", L"Optional extras you can add on.", L"One click, every tweak.", L"Not sure what to pick? Start here."};
+    const WCHAR *taglines[] = {NULL, L"A backup of your settings. If anything feels off, you can go back.", L"Choose a Fortnite profile. For best results also set Rendering Mode to Performance in Fortnite (Settings > Video).", L"Click any tweak to turn it on or off. Tweaks tagged FPS help frame rate most; use Apply FPS preset for just those.", L"Optional extras you can add on.", L"One click, every tweak.", L"Not sure what to pick? Start here."};
     int end;
     if (g_page == 0) end = pageHome(dc, x, y, w);
     else {
@@ -522,6 +549,7 @@ static void acceptName(void) {
 }
 static int confirmBulk(int on) {
     WCHAR m[300];
+    if (on == 2) return MessageBoxW(g_hwnd, L"This turns on the tweaks tagged FPS and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?", L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
     swprintf(m, 300, on ? L"This turns on all %d tweaks and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?" : L"This turns off all tweaks and puts your settings back. Continue?", NTWEAKS);
     return MessageBoxW(g_hwnd, m, L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
 }
@@ -541,6 +569,7 @@ static void click(int mx, int my) {
                 break;
             case K_BTN:
                 if (h->a == B_ALLON) { if (confirmBulk(1)) setAll(1); }
+                else if (h->a == B_FPS) { if (confirmBulk(2)) applyRecommended(); }
                 else if (h->a == B_ALLOFF) { if (confirmBulk(0)) setAll(0); }
                 else if (h->a == B_ULTIMATE) { if (confirmBulk(1)) { setAll(1); g_page = 3; g_scroll = 0; } }
                 else if (h->a == B_RESTORE) { wcscpy(g_status, L"Working... this can take a few seconds."); CreateThread(NULL, 0, restoreThread, NULL, 0, NULL); }

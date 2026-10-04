@@ -50,21 +50,23 @@ static const RegOp opsBg[] = {
     D(HKCU_, L"Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", L"GlobalUserDisabled", 1, 0),
     D(HKLM_, L"SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy", L"LetAppsRunInBackground", 2, -1)};
 
+static const int recSet[] = {0, 2, 3, 5, 6, 12, 13};
+static int isRec(int t) { for (int i = 0; i < (int)(sizeof recSet / sizeof recSet[0]); i++) if (recSet[i] == t) return 1; return 0; }
 enum { SP_REG, SP_POWER, SP_NAGLE, SP_HIBER, SP_MOUSE };
 typedef struct { const WCHAR *name, *desc; const RegOp *ops; int nops; int special; } TweakDef;
 #define OPS(a) a, (int)(sizeof(a) / sizeof(a[0]))
 static const TweakDef tdefs[NTWEAKS] = {
     {L"High Performance Power Plan", L"Stops your CPU slowing down to save power.", NULL, 0, SP_POWER},
-    {L"Enable Game Mode", L"Tells Windows to prioritize your game over background tasks.", OPS(opsGameMode), SP_REG},
+    {L"Enable Game Mode", L"Windows favors your game. Small, safe.", OPS(opsGameMode), SP_REG},
     {L"Disable Game DVR", L"Turns off background recording that costs FPS.", OPS(opsDvr), SP_REG},
     {L"Disable Xbox Game Bar", L"Removes the overlay that can cause stutters.", OPS(opsBar), SP_REG},
-    {L"Disable Fullscreen Optimizations", L"Uses true fullscreen for lower input delay in games.", OPS(opsFso), SP_REG},
+    {L"Disable Fullscreen Optimizations", L"Mixed results. Turn off if it feels worse.", OPS(opsFso), SP_REG},
     {L"Disable Power Throttling", L"Stops Windows throttling apps to save battery.", OPS(opsThrottle), SP_REG},
     {L"Prioritize Games (CPU Scheduling)", L"Gives games the highest slice of CPU and GPU time.", OPS(opsSched), SP_REG},
-    {L"Disable Network Throttling", L"Removes the cap Windows puts on network packets.", OPS(opsNet), SP_REG},
-    {L"Disable Nagle's Algorithm", L"Sends game data immediately for lower ping.", NULL, 0, SP_NAGLE},
+    {L"Disable Network Throttling", L"Lifts a Windows packet cap. Small effect.", OPS(opsNet), SP_REG},
+    {L"Disable Nagle's Algorithm", L"TCP only (launcher, downloads). No effect on Fortnite ping.", NULL, 0, SP_NAGLE},
     {L"Stop Windows Update Sharing", L"Stops your PC using bandwidth to upload updates to others.", OPS(opsDO), SP_REG},
-    {L"Disable Mouse Acceleration", L"Makes your aim consistent: same hand movement, same distance.", OPS(opsMouse), SP_MOUSE},
+    {L"Disable Mouse Acceleration", L"Consistent aim: same movement, same distance.", OPS(opsMouse), SP_MOUSE},
     {L"Disable Sticky Keys Popup", L"Stops the Shift-key popup from minimizing your game.", OPS(opsSticky), SP_REG},
     {L"Fortnite High CPU Priority", L"Makes Windows always run Fortnite at High priority.", OPS(opsFortnite), SP_REG},
     {L"Disable Background Apps", L"Stops apps running behind the scenes and using CPU.", OPS(opsBg), SP_REG},
@@ -248,6 +250,14 @@ static void tweakToggle(int t) {
     if (tweaks[t].on == want) swprintf(g_status, 400, L"%ls: %ls.", tdefs[t].name, want ? L"on" : L"off");
     else swprintf(g_status, 400, L"Couldn't change \"%ls\"%ls. Make sure Nero Tweaks is running as administrator.", tdefs[t].name, ok ? L" (Windows didn't accept it)" : L"");
 }
+static void applyRecommended(void) {
+    int n = 0;
+    for (int i = 0; i < NTWEAKS; i++) {
+        if (!isRec(i) || tweaks[i].on) continue;
+        applyTweak(i); tweaks[i].on = isTweakOn(i); n += tweaks[i].on;
+    }
+    swprintf(g_status, 400, L"FPS preset: %d tweak%ls applied. Restart your PC for best results.", n, n == 1 ? L"" : L"s");
+}
 static void setAll(int v) {
     int n = 0, bad = 0;
     for (int i = 0; i < NTWEAKS; i++) {
@@ -287,7 +297,7 @@ static void gameToggle(int i) {
         iniSet(p, sg, L"sg.TextureQuality", perf ? L"0" : L"2");
         iniSet(p, us, L"bUseVSync", L"False"); iniSet(p, us, L"FrameRateLimit", L"0.000000");
         games[0].on = games[1].on = 0; games[i].on = 1;
-        wcscpy(g_status, perf ? L"Performance profile applied. Start Fortnite to use it." : L"Competitive profile applied. Start Fortnite to use it.");
+        wcscpy(g_status, perf ? L"Performance profile applied. Also set Rendering Mode to Performance in Fortnite (Settings > Video)." : L"Competitive profile applied. Also try Rendering Mode: Performance in Fortnite (Settings > Video).");
     }
     for (int k = 0; k < 2; k++) { WCHAR key[8]; swprintf(key, 8, L"g%d", k); WritePrivateProfileStringW(L"games", key, games[k].on ? L"1" : L"0", g_ini); }
 }
@@ -357,7 +367,7 @@ static LRESULT CALLBACK overlayProc(HWND h, UINT m, WPARAM w, LPARAM l) {
         Rectangle(dc, 0, 0, r.right, r.bottom); DeleteObject(p);
         SetBkMode(dc, TRANSPARENT); SetTextColor(dc, RGB(255, 255, 255)); SelectObject(dc, fBtn);
         WCHAR t[3][48];
-        swprintf(t[0], 48, L"CPU  %.0f%%   %.2f GHz", st.cpuLoad, st.cpuSpeed);
+        swprintf(t[0], 48, L"CPU  %.0f%%  (core %.0f%%)", st.cpuLoad, st.cpuMax);
         if (st.gpuLoad >= 0) swprintf(t[1], 48, L"GPU  %.0f%%   %.0f°C", st.gpuLoad, st.gpuTemp); else wcscpy(t[1], L"GPU  --");
         swprintf(t[2], 48, L"RAM  %.0f%%", st.ram);
         for (int i = 0; i < 3; i++) TextOutW(dc, S(12), S(8) + i * S(22), t[i], (int)wcslen(t[i]));

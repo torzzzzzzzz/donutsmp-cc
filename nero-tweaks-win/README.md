@@ -15,3 +15,16 @@ Addons: performance overlay, shader cache cleaner, background app closer, temp c
 Tweaks tagged FPS are the ones that help frame rate; "Apply FPS preset" turns on just those.
 
 `NeroTweaks.exe --selftest` applies and reverts every tweak and writes selftest.log.
+
+## Selling Pro (free + one-time code locked to one PC)
+
+Free works forever. Pro is unlocked by a code that only works on the PC it was made for.
+
+1. Customer opens **Get Pro** in the app, clicks **Copy ID** and sends you the PC ID (`NERO-XXXX-XXXX-XXXX-XXXX`) with payment.
+2. You run: `python3 tools/keygen.py nero_private_key.pem NERO-XXXX-XXXX-XXXX-XXXX` and send back the code it prints.
+3. Customer pastes it into the app and clicks **Activate Pro**.
+
+The code is a signature of that PC's ID, so a friend with a different PC can't use it.
+**Keep `nero_private_key.pem` secret and backed up** - anyone with it can make codes, and if you lose it you can't issue more for this build.
+`tools/make_keys.py` makes a new key pair (then rebuild the exe with the new `pubkey.inc`).
+Free vs Pro lists are in `license.inc` (`freeTweaks`, `itemLocked`).

@@ -251,22 +251,24 @@ static void tweakToggle(int t) {
     else swprintf(g_status, 400, L"Couldn't change \"%ls\"%ls. Make sure Nero Tweaks is running as administrator.", tdefs[t].name, ok ? L" (Windows didn't accept it)" : L"");
 }
 static void applyRecommended(void) {
-    int n = 0;
+    int n = 0, locked = 0;
     for (int i = 0; i < NTWEAKS; i++) {
         if (!isRec(i) || tweaks[i].on) continue;
+        if (tweakLocked(i)) { locked++; continue; }
         applyTweak(i); tweaks[i].on = isTweakOn(i); n += tweaks[i].on;
     }
-    swprintf(g_status, 400, L"FPS preset: %d tweak%ls applied. Restart your PC for best results.", n, n == 1 ? L"" : L"s");
+    swprintf(g_status, 400, L"FPS preset: %d tweak%ls applied.%ls Restart your PC for best results.", n, n == 1 ? L"" : L"s", locked ? L" The rest need Pro." : L"");
 }
 static void setAll(int v) {
     int n = 0, bad = 0;
     for (int i = 0; i < NTWEAKS; i++) {
         if (tweaks[i].on == v) continue;
+        if (v && tweakLocked(i)) { bad++; continue; }
         if (v) applyTweak(i); else revertTweak(i);
         tweaks[i].on = isTweakOn(i);
         if (tweaks[i].on == v) n++; else bad++;
     }
-    swprintf(g_status, 400, L"%d tweak%ls %ls.%ls", n, n == 1 ? L"" : L"s", v ? L"applied" : L"reverted", bad ? L" Some could not be changed - run as administrator." : L"");
+    swprintf(g_status, 400, L"%d tweak%ls %ls.%ls", n, n == 1 ? L"" : L"s", v ? L"applied" : L"reverted", bad ? (v ? L" Some are Pro-only or need administrator." : L" Some could not be changed - run as administrator.") : L"");
 }
 
 // ---- Fortnite profiles (GameUserSettings.ini, backed up first) ----

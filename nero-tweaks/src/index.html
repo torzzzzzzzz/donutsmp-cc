@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Nero Tweaks</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23000'/%3E%3Cpath d='M16 48V16l32 32V16' fill='none' stroke='%23fff' stroke-width='6' stroke-linejoin='round' stroke-linecap='round'/%3E%3C/svg%3E">
+<style>
+:root{--bg:#000;--panel:#070707;--panel2:#0d0d0d;--line:#222;--text:#f5f5f5;--dim:#8a8a8a;--glow:0 0 6px #fff,0 0 18px rgba(255,255,255,.55)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:"Segoe UI",system-ui,-apple-system,sans-serif}
+body{display:flex;overflow:hidden}
+aside{width:240px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:22px 14px}
+.logo{display:flex;align-items:center;gap:12px;padding:0 8px 26px}
+.logo svg{width:42px;height:42px;filter:drop-shadow(0 0 6px #fff) drop-shadow(0 0 14px rgba(255,255,255,.5))}
+.logo b{font-size:19px;letter-spacing:3px;text-transform:uppercase;text-shadow:var(--glow);line-height:1}
+.logo small{display:block;font-size:10px;letter-spacing:5px;color:var(--dim);margin-top:5px;font-weight:400}
+nav{display:flex;flex-direction:column;gap:4px;flex:1}
+nav button{all:unset;cursor:pointer;display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:10px;color:var(--dim);font-size:14px;letter-spacing:.5px;border:1px solid transparent;transition:.2s}
+nav button svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav button:hover{color:#fff;background:#111}
+nav button.active{color:#fff;background:#0f0f0f;border-color:#fff;box-shadow:0 0 10px rgba(255,255,255,.35),inset 0 0 10px rgba(255,255,255,.06);text-shadow:0 0 8px #fff}
+.applied{border-top:1px solid var(--line);padding:16px 8px 2px;font-size:13px;color:var(--dim)}
+.applied strong{display:block;color:#fff;font-size:15px;text-shadow:var(--glow);margin-bottom:8px}
+.bar{height:4px;background:#1a1a1a;border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#fff;box-shadow:0 0 8px #fff;transition:width .3s}
+main{flex:1;overflow-y:auto;padding:34px 40px;background:radial-gradient(ellipse at 80% -10%,rgba(255,255,255,.06),transparent 55%)}
+h1{font-size:30px;font-weight:600;text-shadow:var(--glow)}
+.tag{color:var(--dim);margin:6px 0 30px;font-size:14px}
+h2{font-size:12px;letter-spacing:4px;text-transform:uppercase;color:#cfcfcf;margin-bottom:16px;text-shadow:0 0 8px rgba(255,255,255,.5)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+.card{background:var(--panel2);border:1px solid #2a2a2a;border-radius:14px;padding:18px 18px 10px;transition:.25s;position:relative;overflow:hidden}
+.card:hover{border-color:#fff;box-shadow:0 0 16px rgba(255,255,255,.25)}
+.card h3{font-size:13px;letter-spacing:2px;text-transform:uppercase;display:flex;align-items:center;gap:8px;margin-bottom:14px}
+.card h3:before{content:"";width:7px;height:7px;border-radius:50%;background:#fff;box-shadow:0 0 8px #fff}
+.stats{display:flex;gap:18px;flex-wrap:wrap}
+.stat span{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
+.stat b{font-size:20px;font-weight:600;text-shadow:0 0 10px rgba(255,255,255,.6);font-variant-numeric:tabular-nums}
+.stat b em{font-size:12px;font-style:normal;color:var(--dim);margin-left:2px;text-shadow:none}
+canvas{width:100%;height:56px;display:block;margin-top:14px}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
+.tw{display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--panel2);border:1px solid #232323;border-radius:10px;padding:12px 14px;font-size:13px;cursor:pointer;transition:.2s;user-select:none}
+.tw:hover{border-color:#777}
+.sw{width:36px;height:20px;border-radius:20px;background:#1c1c1c;border:1px solid #444;position:relative;flex:none;transition:.2s}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#777;transition:.2s}
+.tw.on{border-color:#fff;box-shadow:0 0 8px rgba(255,255,255,.25)}
+.tw.on .sw{border-color:#fff;background:#222}
+.tw.on .sw:after{left:18px;background:#fff;box-shadow:0 0 8px #fff}
+.btn{all:unset;cursor:pointer;border:1px solid #fff;padding:10px 20px;border-radius:10px;font-size:13px;letter-spacing:1px;box-shadow:0 0 10px rgba(255,255,255,.3);transition:.2s;margin:0 10px 18px 0;display:inline-block}
+.btn:hover{background:#fff;color:#000;box-shadow:0 0 20px #fff}
+.panel{background:var(--panel2);border:1px solid #2a2a2a;border-radius:14px;padding:22px;color:#cfcfcf;font-size:14px;line-height:1.6;max-width:720px}
+.chat{display:flex;flex-direction:column;gap:10px;max-width:720px}
+.msgs{min-height:280px;max-height:50vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:4px}
+.m{padding:10px 14px;border-radius:12px;max-width:80%;font-size:14px;border:1px solid #333;background:var(--panel2)}
+.m.me{align-self:flex-end;border-color:#fff;box-shadow:0 0 8px rgba(255,255,255,.3)}
+.chat form{display:flex;gap:10px}
+.chat input{flex:1;background:#050505;border:1px solid #333;border-radius:10px;padding:12px;color:#fff;outline:none;font-size:14px}
+.chat input:focus{border-color:#fff;box-shadow:0 0 10px rgba(255,255,255,.3)}
+.tab{display:none}.tab.show{display:block}
+@media(max-width:760px){aside{width:72px;padding:16px 8px}.logo b,.logo small,nav button span,.applied span{display:none}.logo{padding:0 0 20px;justify-content:center}nav button{justify-content:center;padding:12px}main{padding:22px 16px}}
+
+nav button span small{display:block;font-size:11px;color:#666;margin-top:2px;letter-spacing:0}
+nav button.active span small{color:#aaa}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center;z-index:50}
+.modal.hide{display:none}
+.mbox{background:var(--panel2);border:1px solid #fff;border-radius:18px;padding:36px;width:min(440px,92vw);text-align:center;box-shadow:0 0 30px rgba(255,255,255,.3)}
+.mbox h1{font-size:26px;margin-bottom:8px}.mbox p{color:var(--dim);font-size:14px;margin-bottom:22px;line-height:1.5}
+.mbox input{width:100%;background:#050505;border:1px solid #444;border-radius:12px;padding:14px;color:#fff;font-size:16px;text-align:center;outline:none;margin-bottom:16px}
+.mbox input:focus{border-color:#fff;box-shadow:0 0 12px rgba(255,255,255,.4)}
+.mbox .btn{margin:0;width:100%;text-align:center;padding:13px}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:34px}
+.step{all:unset;cursor:pointer;background:var(--panel2);border:1px solid #2a2a2a;border-radius:14px;padding:18px;transition:.25s;display:block}
+.step:hover{border-color:#fff;box-shadow:0 0 16px rgba(255,255,255,.25);transform:translateY(-2px)}
+.step i{font-style:normal;display:inline-flex;width:26px;height:26px;border:1px solid #fff;border-radius:50%;align-items:center;justify-content:center;font-size:13px;margin-bottom:10px;box-shadow:0 0 8px rgba(255,255,255,.5)}
+.step b{display:block;font-size:15px;margin-bottom:5px}.step span{font-size:12.5px;color:var(--dim);line-height:1.45}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+.toolbar input{background:#050505;border:1px solid #333;border-radius:10px;padding:10px 14px;color:#fff;outline:none;font-size:13px;min-width:220px}
+.toolbar input:focus{border-color:#fff}
+.chip{all:unset;cursor:pointer;padding:7px 14px;border:1px solid #333;border-radius:20px;font-size:12px;color:var(--dim);transition:.2s}
+.chip:hover{color:#fff;border-color:#888}.chip.on{color:#000;background:#fff;border-color:#fff;box-shadow:0 0 10px #fff}
+.tw div small{display:block;color:var(--dim);font-size:11.5px;margin-top:3px;line-height:1.4}
+.tw div b{font-weight:600}
+.hint{color:var(--dim);font-size:12.5px;margin:-8px 0 18px}
+.nostat{color:var(--dim);font-size:12px;margin-top:6px}
+.gname{all:unset;cursor:pointer;border-bottom:1px dashed #666}
+</style>
+</head>
+<body>
+<aside>
+  <div class="logo">
+    <svg viewBox="0 0 64 64" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="32" cy="32" r="28" stroke-width="2" opacity=".5"/>
+      <path d="M18 46V18l28 28V18" stroke-width="6"/>
+      <path d="M10 32h6M48 32h6" stroke-width="2" opacity=".7"/>
+    </svg>
+    <div><b>Nero</b><small>TWEAKS</small></div>
+  </div>
+  <nav id="nav"></nav>
+  <div class="applied"><strong id="appliedTxt">0/81 Tweaks Applied</strong><div class="bar"><i id="appliedBar"></i></div></div>
+</aside>
+
+<main>
+  <section class="tab show" id="tab-home">
+    <h1>Hello, <button class="gname" id="uname" title="Click to change your name">Gamer</button></h1>
+    <p class="tag">Welcome back &mdash; let's get you smoother Fortnite with fewer lag spikes.</p>
+    <h2>Getting started</h2>
+    <div class="steps">
+      <button class="step" onclick="go('restore')"><i>1</i><b>Make a safety backup</b><span>Takes one click and lets you undo everything later.</span></button>
+      <button class="step" onclick="go('opt')"><i>2</i><b>Pick your tweaks</b><span>Switch on what you want. Each one explains what it does.</span></button>
+      <button class="step" onclick="go('ultimate')"><i>3</i><b>Or do it all at once</b><span>Ultimate Mode turns on every tweak for max performance.</span></button>
+    </div>
+    <h2>Your PC right now</h2>
+    <div class="grid" id="cards"></div>
+    <p class="nostat" id="statNote"></p>
+  </section>
+
+  <section class="tab" id="tab-restore">
+    <h1>Restore Point</h1><p class="tag">A backup of your settings. If anything feels off, you can go back.</p>
+    <button class="btn" onclick="addRestore()">+ Create restore point</button>
+    <div class="list" id="restoreList"></div>
+  </section>
+
+  <section class="tab" id="tab-library">
+    <h1>Game Library</h1><p class="tag">Choose which game profile to optimize.</p>
+    <div class="list">
+      <div class="tw"><div><b>Fortnite &mdash; Performance</b><small>Highest FPS, lowest visuals.</small></div><span class="sw"></span></div>
+      <div class="tw"><div><b>Fortnite &mdash; Competitive</b><small>Low input delay, clear visibility.</small></div><span class="sw"></span></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-opt">
+    <h1>Optimizations</h1><p class="tag">Click any tweak to turn it on or off.</p>
+    <div class="toolbar"><input id="search" placeholder="Search tweaks..."><span id="chips"></span></div>
+    <button class="btn" onclick="setAll(true)">Turn all on</button><button class="btn" onclick="setAll(false)">Turn all off</button>
+    <div class="list" id="tweakList"></div>
+  </section>
+
+  <section class="tab" id="tab-addons">
+    <h1>Addons</h1><p class="tag">Optional extras you can add on.</p>
+    <div class="list">
+      <div class="tw"><div><b>FPS Overlay</b><small>Show your frame rate on screen.</small></div><span class="sw"></span></div>
+      <div class="tw"><div><b>Shader Cache Cleaner</b><small>Clears old graphics files.</small></div><span class="sw"></span></div>
+      <div class="tw"><div><b>Background App Closer</b><small>Closes apps that slow your game.</small></div><span class="sw"></span></div>
+    </div>
+  </section>
+
+  <section class="tab" id="tab-ultimate">
+    <h1>Ultimate Mode</h1><p class="tag">One click, every tweak.</p>
+    <div class="panel">Turns on all 81 tweaks for the best possible performance. Make a restore point first so you can undo it.<br><br>
+      <button class="btn" onclick="go('restore')">Make backup first</button><button class="btn" onclick="setAll(true);go('opt')">Enable Ultimate Mode</button></div>
+  </section>
+
+  <section class="tab" id="tab-chat">
+    <h1>AI Chat</h1><p class="tag">Not sure what to pick? Ask.</p>
+    <div class="chat"><div class="msgs" id="msgs"><div class="m">Hi! Ask me about FPS, lag, or which tweaks to pick.</div></div>
+      <form id="chatForm"><input id="chatIn" placeholder="Type a message..." autocomplete="off"><button class="btn" style="margin:0">Send</button></form></div>
+  </section>
+</main>
+
+<div class="modal" id="welcome">
+  <form class="mbox" id="nameForm">
+    <svg viewBox="0 0 64 64" width="64" height="64" fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 8px #fff);margin-bottom:14px"><circle cx="32" cy="32" r="28" stroke-width="2" opacity=".5"/><path d="M18 46V18l28 28V18" stroke-width="6"/></svg>
+    <h1>Welcome to Nero Tweaks</h1>
+    <p>What should we call you?</p>
+    <input id="nameIn" maxlength="24" placeholder="Enter your name" autocomplete="off" autofocus>
+    <button class="btn">Let's go</button>
+  </form>
+</div>
+
+<script>
+const TOTAL=81;
+const $=id=>document.getElementById(id);
+const icons={
+Home:'<path d="M3 11l9-8 9 8v10H3z"/>',
+"Restore Point":'<path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2"/>',
+"Game Library":'<rect x="3" y="7" width="18" height="11" rx="4"/><path d="M8 10v5M5.5 12.5h5M16 11h.01M18 14h.01"/>',
+Optimizations:'<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+Addons:'<path d="M12 3v18M3 12h18"/><rect x="4" y="4" width="16" height="16" rx="3"/>',
+"Ultimate Mode":'<path d="M3 8l5 4 4-8 4 8 5-4-2 11H5z"/>',
+"AI Chat":'<path d="M4 5h16v11H9l-5 4z"/>'};
+const tabs=[["Home","home","Your PC at a glance"],["Restore Point","restore","Back up first"],["Game Library","library","Pick a game"],["Optimizations","opt","Turn tweaks on/off"],["Addons","addons","Optional extras"],["Ultimate Mode","ultimate","Everything at once"],["AI Chat","chat","Ask for help"]];
+const nav=$("nav");
+tabs.forEach(([n,id,sub])=>{const b=document.createElement("button");b.dataset.id=id;b.innerHTML=`<svg viewBox="0 0 24 24">${icons[n]}</svg><span>${n}<small>${sub}</small></span>`;b.onclick=()=>go(id);nav.append(b)});
+function go(id){document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("show",t.id==="tab-"+id));nav.querySelectorAll("button").forEach(b=>b.classList.toggle("active",b.dataset.id===id));$("tab-"+id).parentElement.scrollTop=0}
+go("home");
+
+// name
+const store={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+function setName(n){$("uname").textContent=n;store.set("nero-name",n)}
+const saved=store.get("nero-name");
+if(saved){setName(saved);$("welcome").classList.add("hide")}else setTimeout(()=>$("nameIn").focus(),50);
+$("nameForm").onsubmit=e=>{e.preventDefault();const n=$("nameIn").value.trim();if(!n)return $("nameIn").focus();setName(n);$("welcome").classList.add("hide")};
+$("uname").onclick=()=>{$("nameIn").value=$("uname").textContent;$("welcome").classList.remove("hide");$("nameIn").focus()};
+
+// tweaks
+const T=[
+["Performance","Disable Fullscreen Optimizations","Stops Windows from interfering with fullscreen games."],
+["Performance","High Performance Power Plan","Keeps your CPU running at full speed."],
+["Performance","Disable Game DVR","Turns off background recording that costs FPS."],
+["Performance","Disable Xbox Game Bar","Removes the overlay that can cause stutters."],
+["Performance","Set GPU Priority High","Gives your game first pick of the graphics card."],
+["Performance","Disable Core Parking","Keeps all CPU cores awake and ready."],
+["Performance","Set Fortnite CPU Priority","Makes Windows favor Fortnite over other apps."],
+["Performance","Disable Power Throttling","Prevents Windows from slowing the CPU to save power."],
+["Performance","Optimize Visual Effects","Turns off animations to free up resources."],
+["Performance","Disable Transparency","Removes see-through windows to save GPU power."],
+["Network","Disable Nagle's Algorithm","Sends game data right away for lower ping."],
+["Network","Optimize TCP ACK Frequency","Cuts small delays in network replies."],
+["Network","Flush DNS Cache","Clears stale network lookups."],
+["Network","Disable Windows Update Delivery","Stops your PC uploading updates to others."],
+["Input","Disable Mouse Acceleration","Makes your aim consistent and predictable."],
+["Input","Reduce Input Latency","Lowers the delay between click and action."],
+["Input","Timer Resolution 0.5ms","Makes the system clock more precise for smoother frames."],
+["Input","Optimize MSI Mode","Speeds up how devices talk to the CPU."],
+["Input","Disable HPET","Can reduce stutter on some systems."],
+["Privacy","Disable Telemetry","Stops Windows sending usage data."],
+["Privacy","Disable Cortana","Turns off the voice assistant."],
+["Privacy","Disable Windows Tips","Hides tips and suggestions."],
+["Cleanup","Clear Shader Cache","Removes old graphics files."],
+["Cleanup","Disable Hibernation","Frees disk space used by hibernate."],
+["Cleanup","Disable SysMain","Stops background preloading that uses your disk."],
+["Cleanup","Disable Background Apps","Stops apps running when you're not using them."],
+["Cleanup","Disable Startup Delay","Makes apps launch at login faster."],
+["Cleanup","Disable Search Indexing","Reduces background disk activity."],
+["Cleanup","Optimize Page File","Tunes virtual memory for gaming."],
+["Advanced","Disable Spectre Mitigations","Small speed boost, lowers some security protection."]];
+const tweaks=Array.from({length:TOTAL},(_,i)=>{const t=T[i];return t?{c:t[0],n:t[1],d:t[2],on:false}:{c:"Advanced",n:"Advanced Tweak #"+(i+1),d:"Extra fine-tuning for experienced users.",on:false}});
+let filter="All",q="";
+const cats=["All",...new Set(tweaks.map(t=>t.c))];
+cats.forEach(c=>{const b=document.createElement("button");b.className="chip"+(c==="All"?" on":"");b.textContent=c;b.onclick=()=>{filter=c;document.querySelectorAll("#chips .chip").forEach(x=>x.classList.toggle("on",x===b));render()};$("chips").append(b)});
+$("search").oninput=e=>{q=e.target.value.toLowerCase();render()};
+function render(){const list=$("tweakList");list.innerHTML="";
+ tweaks.forEach(t=>{if((filter!=="All"&&t.c!==filter)||(q&&!(t.n+t.d).toLowerCase().includes(q)))return;
+  const d=document.createElement("div");d.className="tw"+(t.on?" on":"");d.innerHTML=`<div><b>${t.n}</b><small>${t.d}</small></div><span class="sw"></span>`;d.onclick=()=>{t.on=!t.on;save();render()};list.append(d)});
+ update()}
+function update(){const c=tweaks.filter(t=>t.on).length;$("appliedTxt").textContent=`${c}/${TOTAL} Tweaks Applied`;$("appliedBar").style.width=c/TOTAL*100+"%"}
+function save(){store.set("nero",JSON.stringify(tweaks.map(t=>t.on)))}
+function setAll(v){tweaks.forEach(t=>t.on=v);save();render()}
+try{(JSON.parse(store.get("nero"))||[]).forEach((v,i)=>tweaks[i]&&(tweaks[i].on=!!v))}catch(e){}
+render();
+document.querySelectorAll("#tab-library .tw,#tab-addons .tw").forEach(d=>d.onclick=()=>d.classList.toggle("on"));
+function addRestore(){const d=document.createElement("div");d.className="tw on";d.innerHTML=`<div><b>Restore point</b><small>${new Date().toLocaleString()}</small></div><span class="sw"></span>`;$("restoreList").prepend(d)}
+
+// chat
+$("chatForm").onsubmit=e=>{e.preventDefault();const v=$("chatIn").value.trim();if(!v)return;add(v,1);$("chatIn").value="";setTimeout(()=>add("Start with the Performance and Input tweaks in Optimizations. Make a restore point first!",0),600)};
+function add(t,me){const d=document.createElement("div");d.className="m"+(me?" me":"");d.textContent=t;$("msgs").append(d);$("msgs").scrollTop=1e9}
+
+// stat cards: real data in the desktop app, simulated in a plain browser
+const hasReal=!!(window.nero&&window.nero.stats);
+const rnd=(a,b)=>Math.round(a+Math.random()*(b-a));
+const defs=[
+ {t:"Processor",f:[["Temperature","°C","cpuTemp",0,()=>rnd(45,72)],["Usage","%","cpuLoad",0,()=>rnd(8,60)],["Speed"," GHz","cpuSpeed",2,()=>(3.6+Math.random()*1.4)]]},
+ {t:"Graphics Card",f:[["Temperature","°C","gpuTemp",0,()=>rnd(40,68)],["Usage","%","gpuLoad",0,()=>rnd(5,75)],["Memory"," GB","gpuMem",1,()=>2+Math.random()*3]]},
+ {t:"Disk",f:[["Health","%","diskHealth",0,()=>100],["Used","%","diskUse",0,()=>rnd(30,70)]]},
+ {t:"RAM",f:[["Usage","%","ram",0,()=>rnd(35,62)]]},
+ {t:"Network",f:[["Total"," Mbps","netTotal",1,()=>Math.random()*40],["Sent"," Mbps","netSent",1,()=>Math.random()*8],["Received"," Mbps","netRecv",1,()=>Math.random()*32]]}];
+const live=defs.map(d=>{const c=document.createElement("div");c.className="card";
+ c.innerHTML=`<h3>${d.t}</h3><div class="stats">${d.f.map(f=>`<div class="stat"><span>${f[0]}</span><b>--<em>${f[1]}</em></b></div>`).join("")}</div><canvas></canvas>`;
+ $("cards").append(c);const cv=c.querySelector("canvas");
+ return {d,cv,vals:[...c.querySelectorAll(".stat b")],pts:Array.from({length:60},()=>Math.random()*.3+.3),x:cv.getContext("2d")}});
+function draw(o){const cv=o.cv,w=cv.width=cv.clientWidth*devicePixelRatio,h=cv.height=cv.clientHeight*devicePixelRatio,x=o.x,n=o.pts.length;
+ x.clearRect(0,0,w,h);x.strokeStyle="rgba(255,255,255,.07)";x.lineWidth=1;
+ for(let i=1;i<4;i++){x.beginPath();x.moveTo(0,h*i/4);x.lineTo(w,h*i/4);x.stroke()}
+ const P=o.pts.map((v,i)=>[i/(n-1)*w,h-4-v*(h-10)]);
+ x.beginPath();P.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));
+ x.save();x.lineTo(w,h);x.lineTo(0,h);const g=x.createLinearGradient(0,0,0,h);g.addColorStop(0,"rgba(255,255,255,.18)");g.addColorStop(1,"rgba(255,255,255,0)");x.fillStyle=g;x.fill();x.restore();
+ x.beginPath();P.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));
+ x.strokeStyle="#fff";x.lineWidth=1.8*devicePixelRatio;x.lineJoin="round";x.shadowColor="#fff";x.shadowBlur=10;x.stroke()}
+async function tick(){
+ let r=null;if(hasReal){try{r=await window.nero.stats()}catch(e){}}
+ live.forEach(o=>{let first=null;
+  o.d.f.forEach((f,i)=>{let v=r?r[f[2]]:f[4]();const ok=v!=null&&!isNaN(v);if(i===0||first===null&&ok)first=ok?v:first;
+   o.vals[i].firstChild.nodeValue=ok?Number(v).toFixed(f[3]):"--"});
+  const gv=o.d.f.map(f=>r?r[f[2]]:f[4]()).find(v=>v!=null&&!isNaN(v));
+  const last=o.pts[o.pts.length-1];
+  o.pts.push(Math.min(.95,Math.max(.05,r?(gv!=null?Math.min(1,gv/100):last):last+(Math.random()-.5)*.28)));o.pts.shift();draw(o)})}
+$("statNote").textContent=hasReal?"":"Preview mode: numbers are simulated. Run the desktop app for real readings.";
+tick();setInterval(tick,1500);addEventListener("resize",()=>live.forEach(draw));
+</script>
+</body>
+</html>

@@ -57,6 +57,7 @@
     },
     "portable": {
       "artifactName": "Torz-R1-${version}-portable.${ext}"
-    }
+    },
+    "publish": null
   }
 }

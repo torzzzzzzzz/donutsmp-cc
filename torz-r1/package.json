@@ -1,0 +1,17 @@
+{
+  "name": "torz-r1",
+  "version": "1.0.0",
+  "description": "Torz R1 recoil simulator",
+  "author": "Torz",
+  "main": "main.js",
+  "scripts": { "start": "electron .", "test": "node recoil.test.js", "dist": "electron-builder --win portable" },
+  "dependencies": { "koffi": "^2.16.3" },
+  "devDependencies": { "electron": "^31.0.0", "electron-builder": "^24.13.3" },
+  "build": {
+    "appId": "com.torz.r1",
+    "productName": "Torz R1",
+    "directories": { "output": "release" },
+    "asarUnpack": ["**/node_modules/koffi/**"],
+    "win": { "icon": "logo.png" }
+  }
+}

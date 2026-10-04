@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Torz R1</title>
+<style>
+  :root{--bg:#05070a;--panel:#0b1118;--neon:#4de1ff;--neon2:#8af0ff;--dim:#1b3a45;--text:#d8f7ff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:Segoe UI,system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--neon);box-shadow:0 0 14px #4de1ff55}
+  header img{height:56px}
+  header h1{margin:0;color:var(--neon);text-shadow:0 0 10px var(--neon);letter-spacing:2px}
+  main{display:grid;grid-template-columns:300px 1fr;gap:16px;padding:16px;max-width:980px;margin:auto}
+  @media(max-width:760px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--dim);border-radius:8px;padding:14px;margin-bottom:14px}
+  .card h2{margin:0 0 10px;font-size:.95rem;color:var(--neon);text-transform:uppercase;letter-spacing:1px}
+  label{display:block;margin:8px 0 4px;font-size:.85rem}
+  select,input[type=text],button{width:100%;background:#000;color:var(--neon2);border:1px solid var(--neon);border-radius:4px;padding:7px;font-size:.95rem}
+  button{cursor:pointer;margin-top:8px}
+  button:hover{background:var(--neon);color:#000}
+  input[type=range]{width:100%;accent-color:var(--neon)}
+  .switch{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+  .switch input{appearance:none;width:44px;height:22px;background:#000;border:1px solid var(--neon);border-radius:11px;position:relative;cursor:pointer}
+  .switch input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--dim);transition:.15s}
+  .switch input:checked{box-shadow:0 0 8px var(--neon)}
+  .switch input:checked::after{left:24px;background:var(--neon)}
+  canvas{width:100%;max-width:460px;aspect-ratio:1;background:#000;border:1px solid var(--neon);border-radius:6px;display:block;box-shadow:0 0 12px #4de1ff33}
+  .row{display:flex;gap:8px}.row button{margin-top:8px}
+  #info{font-size:.85rem;color:var(--neon2);min-height:1.2em}
+  .note{font-size:.75rem;color:#6fa6b5}
+</style>
+</head>
+<body>
+<header>
+  <img src="logo.png" alt="logo">
+  <h1>TORZ R1</h1>
+  <img src="logo.png" alt="logo" style="margin-left:auto">
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>Select gun</h2>
+      <select id="gun"></select>
+      <div class="row"><button id="del">Delete</button><button id="exp">Export</button></div>
+    </div>
+    <div class="card">
+      <h2>Import / save</h2>
+      <label>Import pattern file (.json)</label>
+      <input type="file" id="file" accept=".json" style="width:100%;color:var(--neon2)">
+      <label>Name</label>
+      <input type="text" id="name" placeholder="e.g. My AK test">
+      <button id="save">Save pattern</button>
+      <p class="note">Format: <code>{"rpm":450,"pattern":[[dx,dy],...]}</code> or just an array of [dx,dy].</p>
+    </div>
+    <div class="card">
+      <h2>Setting</h2>
+      <div class="switch"><span>On/Off</span><input type="checkbox" id="power" checked></div>
+      <label>Aim key</label>
+      <select id="aim">
+        <option value="both">Right + Left Mouse Button</option>
+        <option value="lmb">Left Mouse Button</option>
+      </select>
+      <p class="note" id="mstat"></p>
+      <label>Hotkey for On/Off</label>
+      <button id="hk" type="button">Click, then press a key</button>
+      <p class="note">While On, holding the aim key pulls the mouse against the selected pattern (Windows). The overlay below only changes the preview.</p>
+      <div class="switch"><span>Show compensation</span><input type="checkbox" id="comp"></div>
+      <label>Accuracy: <span id="accv">100</span>%</label>
+      <input type="range" id="acc" min="0" max="100" value="100">
+      <button id="fire">Fire burst</button>
+    </div>
+  </section>
+  <section>
+    <div class="card">
+      <h2>Pattern</h2>
+      <canvas id="sim" width="460" height="460"></canvas>
+      <p id="info"></p>
+    </div>
+  </section>
+</main>
+<script>
+const KEY='torzr1.guns';
+const NEON='#4de1ff';
+// built-in approximations (not real game data)
+function gen(n,climb,decay,floor,amp,per){const o=[];for(let i=0;i<n;i++)o.push([+(amp*Math.cos(2*Math.PI*i/per)).toFixed(2),+(-(floor+climb*Math.exp(-i/decay))).toFixed(2)]);return o}
+function phased(n,seed){let s=seed;const r=()=>(s=(s*1664525+1013904223)%4294967296)/4294967296-.5;const o=[];
+ for(let i=1;i<=n;i++){if(i<=5)o.push([0,-4]);else if(i<=15)o.push([-1.2,-2]);else if(i<=25)o.push([1.4,-1.5]);else o.push([+(r()*5).toFixed(2),+(-1.5+r()*2).toFixed(2)])}return o}
+const builtin={
+ "Assignment pattern":{rpm:450,pattern:phased(30,42)},
+ "AK (approx)":{rpm:450,pattern:gen(30,5,6,.8,1.6,14)},
+ "Thompson (approx)":{rpm:462,pattern:gen(30,3,8,.8,.9,10)}
+};
+let custom={};
+try{custom=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){}
+const all=()=>({...builtin,...custom});
+const $=id=>document.getElementById(id);
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(custom))}catch(e){}}
+function refresh(sel){const g=$('gun');g.innerHTML='';for(const k in all())g.add(new Option(k+(builtin[k]?'':' ★'),k));if(sel)g.value=sel;simulate()}
+
+let pending=null;
+$('file').onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  try{const j=JSON.parse(await f.text());pending=Array.isArray(j)?{rpm:450,pattern:j}:{rpm:j.rpm||450,pattern:j.pattern};
+   if(!Array.isArray(pending.pattern)||!pending.pattern.every(p=>Array.isArray(p)&&p.length==2&&p.every(Number.isFinite)))throw 0;
+   $('name').value=j.name||f.name.replace(/\.json$/,'');$('info').textContent='Imported '+pending.pattern.length+' shots — name it and press Save.';
+  }catch(_){pending=null;$('info').textContent='That file is not a valid pattern.'}
+};
+$('save').onclick=()=>{
+  const name=$('name').value.trim();if(!name)return $('info').textContent='Enter a name first.';
+  const src=pending||all()[$('gun').value];
+  custom[name]={rpm:src.rpm,pattern:src.pattern};persist();pending=null;refresh(name);
+};
+$('del').onclick=()=>{const k=$('gun').value;if(custom[k]){delete custom[k];persist();refresh()}else $('info').textContent='Built-in guns can\'t be deleted.'};
+$('exp').onclick=()=>{const k=$('gun').value,w=all()[k];const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify({name:k,...w},null,1)],{type:'application/json'}));a.download=k+'.json';a.click()};
+$('acc').oninput=()=>{$('accv').textContent=$('acc').value;simulate()};
+$('comp').onchange=simulate;$('fire').onclick=simulate;$('gun').onchange=simulate;
+
+// ---- Send the live settings to the main process (it moves the mouse) ----
+try{$('aim').value=localStorage.getItem('torzr1.aim')||'both'}catch(e){}
+$('aim').onchange=()=>{try{localStorage.setItem('torzr1.aim',$('aim').value)}catch(e){}simulate()};
+async function pushState(w){
+  if(!window.torz)return;
+  let ok=false;
+  try{ok=await window.torz.setState({power:$('power').checked,aim:$('aim').value,rpm:w.rpm,pattern:w.pattern,acc:$('acc').value/100})}catch(e){}
+  $('mstat').textContent=ok?'Mouse control: ready.':'Mouse control unavailable (Windows only) — preview only.';
+}
+
+const sim=$('sim').getContext('2d');
+function axes(c,W){c.clearRect(0,0,W,W);c.strokeStyle='#1b3a45';c.beginPath();c.moveTo(W/2,0);c.lineTo(W/2,W);c.moveTo(0,W*.7);c.lineTo(W,W*.7);c.stroke()}
+function scaleFor(p){let x=0,y=0,m=1;for(const[a,b]of p){x+=a;y+=b;m=Math.max(m,Math.abs(x),Math.abs(y)/.65)}return 200/m}
+function simulate(){
+  const w=all()[$('gun').value];if(!w)return;
+  pushState(w);
+  const use=$('comp').checked&&$('power').checked,a=$('acc').value/100,k=scaleFor(w.pattern);
+  axes(sim,460);let rx=0,ry=0,cx=0,cy=0;sim.font='11px sans-serif';
+  w.pattern.forEach(([dx,dy],i)=>{rx+=dx;ry+=dy;if(use){cx-=dx*a;cy-=dy*a}
+    const px=230+(rx+cx)*k,py=322+(ry+cy)*k;sim.fillStyle=NEON;sim.shadowColor=NEON;sim.shadowBlur=8;
+    sim.beginPath();sim.arc(px,py,4,0,7);sim.fill();sim.shadowBlur=0;sim.fillStyle='#d8f7ff';sim.fillText(i+1,px+7,py)});
+  $('info').textContent=`${w.pattern.length} shots · ${(60000/w.rpm).toFixed(0)} ms/shot · final offset (${(rx+cx).toFixed(1)}, ${(ry+cy).toFixed(1)})`;
+}
+
+// ---- On/Off hotkey ----
+let hotkey='';
+try{hotkey=localStorage.getItem('torzr1.hotkey')||''}catch(e){}
+const hk=$('hk');let binding=false;
+const showHk=()=>hk.textContent=hotkey?'Hotkey: '+hotkey+' (click to change)':'Click, then press a key';
+const SPECIAL={Space:'Space',Backquote:'`',Minus:'-',Equal:'=',BracketLeft:'[',BracketRight:']',Semicolon:';',Quote:"'",Comma:',',Period:'.',Slash:'/',Backslash:'\\',Insert:'Insert',Delete:'Delete',Home:'Home',End:'End',PageUp:'PageUp',PageDown:'PageDown',ArrowUp:'Up',ArrowDown:'Down',ArrowLeft:'Left',ArrowRight:'Right'};
+function accel(code){let m;if(m=code.match(/^Key(.)$/))return m[1];if(m=code.match(/^Digit(\d)$/))return m[1];if(m=code.match(/^Numpad(\d)$/))return 'num'+m[1];if(/^F\d+$/.test(code))return code;return SPECIAL[code]||''}
+const status=document.createElement('p');status.className='note';hk.insertAdjacentElement('afterend',status);
+async function syncGlobal(){
+  if(!window.torz){status.textContent=hotkey?'Hotkey works while this window is focused.':'';return}
+  let ok=false;try{ok=await window.torz.setHotkey(accel(hotkey))}catch(e){}
+  status.textContent=!hotkey?'':ok?'Hotkey active everywhere on your PC.':'Hotkey works while this window is focused.';
+}
+if(window.torz)window.torz.onToggle(()=>{if(!document.hasFocus()){$('power').click()}});
+hk.onclick=()=>{binding=true;hk.textContent='Press a key... (Esc clears)'};
+addEventListener('keydown',e=>{
+  if(binding){e.preventDefault();binding=false;hotkey=e.key==='Escape'?'':e.code;
+    try{localStorage.setItem('torzr1.hotkey',hotkey)}catch(_){}showHk();syncGlobal();return}
+  if(hotkey&&e.code===hotkey&&!e.repeat&&!/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)){e.preventDefault();$('power').click()}
+});
+$('power').onchange=simulate;
+showHk();syncGlobal();
+
+refresh();
+</script>
+</body>
+</html>

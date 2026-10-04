@@ -522,7 +522,7 @@ static void paint(HDC wdc, int W, int H) {
     MoveToEx(dc, sw - 1, 0, NULL); LineTo(dc, sw - 1, H); SelectObject(dc, op); DeleteObject(lp);
     drawLogo(dc, S(10), S(14), sw - S(20));
     int lh = (sw - S(20)) * g_logoH / g_logoW;
-    Text(dc, g_pro ? L"T  W  E  A  K  S    PRO" : L"T  W  E  A  K  S    FREE", S(26), S(14) + lh - S(4), sw, fSmall, C_DIM, 0, DT_SINGLELINE);
+    Text(dc, g_pro ? L"T  W  E  A  K  S   PRO VERSION" : L"T  W  E  A  K  S   FREE VERSION", S(26), S(14) + lh - S(4), sw, fSmall, C_DIM, 0, DT_SINGLELINE);
     int ny = S(14) + lh + S(36);
     for (int i = 0; i < 8; i++) {
         RECT r = {S(14), ny, sw - S(14), ny + S(54)};
@@ -579,6 +579,9 @@ static void acceptName(void) {
     g_welcome = 0; ShowWindow(g_edit, SW_HIDE); SetFocus(g_hwnd);
     InvalidateRect(g_hwnd, NULL, FALSE);
 }
+static void updateTitle(void) {
+    SetWindowTextW(g_hwnd, g_pro ? L"Nero Tweaks - Pro Version" : L"Nero Tweaks - Free Version");
+}
 static void lockedMsg(void) {
     g_page = 7; g_scroll = 0;
     wcscpy(g_status, L"That's a Pro feature. Unlock it below with your Pro code.");
@@ -597,7 +600,7 @@ static void activate(void) {
     WCHAR code[600]; GetWindowTextW(g_keyEdit, code, 600);
     if (licenseValid(code)) {
         WritePrivateProfileStringW(L"license", L"key", code, g_ini);
-        g_pro = 1; SetWindowTextW(g_keyEdit, L"");
+        g_pro = 1; SetWindowTextW(g_keyEdit, L""); updateTitle();
         wcscpy(g_status, L"Pro unlocked on this PC. Thank you!");
     } else wcscpy(g_status, L"That code isn't valid for this PC. Check it was made for the PC ID shown here.");
 }
@@ -760,6 +763,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     SendMessageW(g_keyEdit, WM_SETFONT, (WPARAM)fBody, TRUE);
     SendMessageW(g_keyEdit, EM_SETLIMITTEXT, 400, 0);
     SetWindowLongPtrW(g_keyEdit, GWLP_WNDPROC, (LONG_PTR)editProc);
+    updateTitle();
     ShowWindow(g_hwnd, show); UpdateWindow(g_hwnd);
     SetWindowPos(g_hwnd, NULL, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
     st.cpuTemp = -1;

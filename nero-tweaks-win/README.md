@@ -1,6 +1,6 @@
 # Nero Tweaks (native Windows app, C)
 
-`NeroTweaks.exe` is a single file - double-click it (it asks for administrator rights, which tweaks need).
+`NeroTweaks-FreeVersion.exe` is a single file - double-click it (it asks for administrator rights, which tweaks need).
 
 Rebuild on Linux: `sudo apt install mingw-w64 && ./build.sh`
 
@@ -14,7 +14,7 @@ Addons: performance overlay, shader cache cleaner, background app closer, temp c
 
 Tweaks tagged FPS are the ones that help frame rate; "Apply FPS preset" turns on just those.
 
-`NeroTweaks.exe --selftest` applies and reverts every tweak and writes selftest.log.
+`NeroTweaks-FreeVersion.exe --selftest` applies and reverts every tweak and writes selftest.log.
 
 ## Selling Pro (free + one-time code locked to one PC)
 

@@ -6,7 +6,7 @@ try { si = require('systeminformation'); } catch (e) {}
 function createWindow() {
   const win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 900, minHeight: 600,
-    backgroundColor: '#000000', title: 'Nero Tweaks', autoHideMenuBar: true,
+    backgroundColor: '#000000', title: 'Nero Tweaks', icon: path.join(__dirname, 'src', 'assets', 'logo-white.png'), autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
   win.loadFile(path.join(__dirname, 'src', 'index.html'));

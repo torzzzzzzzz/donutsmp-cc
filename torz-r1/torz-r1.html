@@ -134,7 +134,7 @@ $('save').onclick=()=>{
   if(!name)return $('info').textContent='Enter a name first (not blank, not "__proto__").';
   const src=pending||all()[$('gun').value];
   if(builtin[name])return $('info').textContent='"'+name+'" is a built-in gun — pick another name.';
-  tune[name]=pending?{x:100,y:100,rpm:src.rpm}:{x:+$('tx').value,y:+$('ty').value,rpm:okRpm(+$('rpm').value)?+$('rpm').value:src.rpm};   // imports keep their own rpm, start at 100%
+  tune[name]=pending?{x:100,y:100,rpm:src.rpm}:{x:+$('tx').value,y:+$('ty').value,rpm:okRpm(+$('rpm').value)?+$('rpm').value:rpmOf(src)};   // imports keep their own rpm, start at 100%
   custom[name]={rpm:src.rpm,pattern:src.pattern};persist();saveTuneStore();pending=null;refresh(name);
 };
 $('del').onclick=()=>{const k=$('gun').value;if(custom[k]){delete custom[k];delete tune[k];persist();saveTuneStore();refresh()}else $('info').textContent='Built-in guns can\'t be deleted.'};
@@ -143,6 +143,7 @@ $('exp').onclick=()=>{const k=$('gun').value,w=all()[k];const a=document.createE
 $('acc').oninput=()=>{$('accv').textContent=$('acc').value;simulate()};
 $('comp').onchange=simulate;$('fire').onclick=simulate;$('gun').onchange=()=>{loadTune();simulate()};
 ['tx','ty'].forEach(id=>$(id).oninput=()=>{$(id+'v').textContent=$(id).value;saveTune();simulate()});
+$('rpm').onchange=()=>{const w=all()[$('gun').value];if(w){$('rpm').value=rpmOf(w);showRpm()}};   // ended on an invalid value: show what is really in use
 $('rpm').oninput=()=>{showRpm();const v=+$('rpm').value;if(!okRpm(v))return;const k=$('gun').value;tune[k]={...(tune[k]||{}),rpm:v};saveTuneStore();simulate()};
 try{$('smooth').checked=localStorage.getItem('torzr1.smooth')!=='0'}catch(e){}
 $('smooth').onchange=()=>{try{localStorage.setItem('torzr1.smooth',$('smooth').checked?'1':'0')}catch(e){}simulate()};

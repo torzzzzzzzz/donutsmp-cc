@@ -1,12 +1,12 @@
 {
   "name": "torz-r1",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Torz R1 recoil simulator",
   "author": "Torz",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node pattern.test.js && node recoil.test.js",
+    "test": "node pattern.test.js && node recoil.test.js && node native.test.js",
     "dist": "electron-builder --win",
     "dist:installer": "electron-builder --win nsis",
     "dist:portable": "electron-builder --win portable"

@@ -18,13 +18,16 @@ Build the Windows `.exe` files **on Windows** (or Linux/macOS with Wine installe
 ## Features
 
 - **Aim key**: Right + Left Mouse Button, or Left only.
-- **Smooth pull**: each shot's correction is spread across the shot interval (1 px steps). Off = one jump per shot.
+- **Smooth pull**: each shot's correction is applied in 1 px steps and finishes within the first half of the shot interval. Off = one jump per shot.
+- **Fire rate (rpm)**: set it to your gun's real rate (per gun, remembered). If the pull falls behind your shots, raise it.
+  Rough guide: emptying 30 rounds in 3 s is about 600 rpm.
 - **Accuracy** and per-gun **Horizontal / Vertical strength** (0-200 %, remembered per gun).
 - **Import** `.json`: `[[dx,dy],...]`, `[{"x":1,"y":-2},...]` or `{"name","rpm","pattern"}`.
   UTF-8 BOM, numeric strings and `{x,y}` / `{dx,dy}` shapes are accepted. Rejected with a reason: invalid JSON,
   empty pattern, more than 1000 shots, any shot that is not two numbers. Values beyond +/-200 px are limited,
   rpm outside 30-3000 falls back to 450, and the user is told.
 - **Tray icon**: Show, Turn On/Off, Minimize to tray, Quit. Only one copy can run at a time.
+- While running, the app asks Windows for a 1 ms timer and opts out of power throttling so it keeps pace when a game is in front.
 - Mouse control is Windows only; elsewhere the app is a preview.
 
 ## Files

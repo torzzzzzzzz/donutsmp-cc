@@ -21,8 +21,11 @@ function createBoost(koffi) {
       const setInfo = kernel32.func(
         'int __stdcall SetProcessInformation(intptr_t hProcess, int infoClass, _In_ PROCESS_POWER_THROTTLING_STATE *info, uint32_t size)'
       );
-      // class 4 = ProcessPowerThrottling; control EXECUTION_SPEED(1)|IGNORE_TIMER_RESOLUTION(4), state 0 = not throttled
-      noThrottle = () => setInfo(self(), 4, { Version: 1, ControlMask: 5, StateMask: 0 }, 12);
+      // class 4 = ProcessPowerThrottling; state 0 = "do not throttle" for the bit in ControlMask.
+      // Two separate calls: IGNORE_TIMER_RESOLUTION (4) is Windows 11 only and is rejected on Windows 10,
+      // which must not cancel the EXECUTION_SPEED (1) opt-out that Windows 10 does support.
+      const apply = mask => { try { setInfo(self(), 4, { Version: 1, ControlMask: mask, StateMask: 0 }, 12); } catch (_) {} };
+      noThrottle = () => { apply(1); apply(4); };
     } catch (_) {}
     return {
       on() {

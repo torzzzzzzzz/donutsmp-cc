@@ -36,3 +36,14 @@ Build the Windows `.exe` files **on Windows** (or Linux/macOS with Wine installe
 | `pattern.js` | import/validation shared by the UI and the tests |
 | `torz-r1.html` | UI |
 | `icon.png`, `build/icon.ico` | square app icons generated from `logo.png` |
+
+## Ready-made patterns (`patterns/`)
+
+Import with **Choose File**, then **Save pattern**.
+
+| File | Notes |
+|------|-------|
+| `AK-screenshot.json` | Traced from a 30-bullet AK screenshot (bottom dot = bullet 1). 29 kicks between 30 bullets, 450 rpm, scaled 0.5 screenshot-px to mouse-px. Adjust with the strength sliders. |
+| `AK-screenshot-reversed.json` | Same kicks in reverse order, for if the first file feels backwards. |
+
+The rpm is an assumption (450, same as the built-in AK) - the screenshot doesn't contain it.

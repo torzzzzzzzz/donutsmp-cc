@@ -67,4 +67,16 @@ assert.strictEqual(P.cleanName('x'.repeat(100)).length, 40);
   assert.deepStrictEqual(P.loadStore(null), {});
   assert.strictEqual(Object.getPrototypeOf(P.loadStore(JSON.parse('{"__proto__":{"rpm":1,"pattern":[[1,1]]}}'))), Object.prototype);
 }
+
+// every shipped pattern file must import cleanly with the app's own importer
+{
+  const fs = require('fs'), path = require('path');
+  const dir = path.join(__dirname, 'patterns');
+  const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter(f => f.endsWith('.json')) : [];
+  for (const f of files) {
+    const r = P.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    assert.ok(r.ok, f + ': ' + r.error);
+    assert.deepStrictEqual(r.notes, [], f + ' needed fixing: ' + r.notes);
+  }
+}
 console.log('all pattern import tests passed');

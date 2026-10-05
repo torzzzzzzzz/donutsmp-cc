@@ -57,9 +57,19 @@ static int licenseValid(const WCHAR *code) {
     }
     return ok;
 }
+#ifdef OWNER_BUILD
+#define IS_OWNER 1
+#else
+#define IS_OWNER 0
+#endif
+static const WCHAR *planName(void) { return IS_OWNER ? L"OWNER VERSION" : g_pro ? L"PRO VERSION" : L"FREE VERSION"; }
+
 static void loadLicense(void) {
     WCHAR code[600] = L"";
     machineId(g_machine);
+#ifdef OWNER_BUILD
+    g_pro = 1; (void)code; return;
+#endif
     GetPrivateProfileStringW(L"license", L"key", L"", code, 600, g_ini);
     g_pro = code[0] && licenseValid(code);
 }
@@ -77,3 +87,50 @@ static int itemLocked(int li, int i) {
     if (li == 1) return 1;            // Fortnite profiles
     return i == 1 || i == 2;          // Shader Cache Cleaner, Background App Closer
 }
+
+#ifdef OWNER_BUILD
+// ---- owner tools: make a Pro code for a customer's PC ID. Needs nero_private_key.bin next to this exe. ----
+static WCHAR g_ownerCode[200];
+static void b32enc(const UCHAR *in, int n, WCHAR *out) {
+    static const char A[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    unsigned buf = 0; int bits = 0, o = 0, c = 0;
+    for (int i = 0; i < n; i++) {
+        buf = (buf << 8) | in[i]; bits += 8;
+        while (bits >= 5) { bits -= 5; if (c && c % 8 == 0) out[o++] = L'-'; out[o++] = (WCHAR)A[(buf >> bits) & 31]; c++; }
+    }
+    if (bits) { if (c && c % 8 == 0) out[o++] = L'-'; out[o++] = (WCHAR)A[(buf << (5 - bits)) & 31]; }
+    out[o] = 0;
+}
+static int ownerMakeCode(const WCHAR *idw) {
+    char id[64]; int n = 0;
+    for (const WCHAR *p = idw; *p && n < 60; p++) if (!iswspace(*p)) id[n++] = (char)towupper(*p);
+    id[n] = 0;
+    int valid = strlen(id) == 24 && strncmp(id, "NERO-", 5) == 0;
+    for (int i = 5; valid && i < 24; i++) valid = ((i - 5) % 5 == 4) ? id[i] == '-' : isxdigit((unsigned char)id[i]) != 0;
+    if (!valid) { wcscpy(g_status, L"That doesn't look like a PC ID. It should look like NERO-XXXX-XXXX-XXXX-XXXX."); g_ownerCode[0] = 0; return 0; }
+    WCHAR path[MAX_PATH]; GetModuleFileNameW(NULL, path, MAX_PATH);
+    WCHAR *sl = wcsrchr(path, L'\\'); if (sl) *sl = 0;
+    wcscat(path, L"\\nero_private_key.bin");
+    UCHAR blob[104]; DWORD got = 0;
+    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    if (f == INVALID_HANDLE_VALUE || !ReadFile(f, blob, sizeof blob, &got, NULL) || got != sizeof blob) {
+        if (f != INVALID_HANDLE_VALUE) CloseHandle(f);
+        wcscpy(g_status, L"Put nero_private_key.bin in the same folder as this exe, then try again."); g_ownerCode[0] = 0; return 0;
+    }
+    CloseHandle(f);
+    char msg[80]; snprintf(msg, sizeof msg, "NERO1|%s", id);
+    UCHAR h[32], sig[64]; ULONG sn = 0; int ok = 0;
+    BCRYPT_ALG_HANDLE alg = NULL; BCRYPT_KEY_HANDLE key = NULL;
+    if (sha256(msg, (ULONG)strlen(msg), h) && BCryptOpenAlgorithmProvider(&alg, BCRYPT_ECDSA_P256_ALGORITHM, NULL, 0) == 0) {
+        if (BCryptImportKeyPair(alg, NULL, BCRYPT_ECCPRIVATE_BLOB, &key, blob, sizeof blob, 0) == 0) {
+            ok = BCryptSignHash(key, NULL, h, 32, sig, 64, &sn, 0) == 0 && sn == 64;
+            BCryptDestroyKey(key);
+        }
+        BCryptCloseAlgorithmProvider(alg, 0);
+    }
+    if (!ok) { wcscpy(g_status, L"The key file isn't valid, so no code was made."); g_ownerCode[0] = 0; return 0; }
+    b32enc(sig, 64, g_ownerCode);
+    wcscpy(g_status, L"Code made. Click Copy code and send it to the customer.");
+    return 1;
+}
+#endif

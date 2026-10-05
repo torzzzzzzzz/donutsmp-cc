@@ -240,7 +240,7 @@ static DWORD WINAPI restoreThread(LPVOID p) {
 #include "features.inc"
 
 enum { K_NAV, K_STEP, K_TOG, K_BTN, K_NAME };
-enum { B_PSAVE, B_PAPPLY, B_PICON, B_PDEL, B_ICONPICK, B_ICONCLEAR, B_ICONBACK, B_SEARCH, B_SEND, B_ANALYZE, B_UPDATE, B_LAT, B_MCANCEL, B_COPYID, B_ACTIVATE, B_FPS, B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
+enum { B_REPLAY, B_MAKECODE, B_COPYCODE, B_PSAVE, B_PAPPLY, B_PICON, B_PDEL, B_ICONPICK, B_ICONCLEAR, B_ICONBACK, B_SEARCH, B_SEND, B_ANALYZE, B_UPDATE, B_LAT, B_MCANCEL, B_COPYID, B_ACTIVATE, B_FPS, B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
 typedef struct { RECT r; int kind, a, b; } Hit;
 static Hit hits[400]; static int nhits;
 static void addHit(RECT r, int kind, int a, int b) {
@@ -464,15 +464,19 @@ static int pageUltimate(HDC dc, int x, int y, int w) {
     return y + S(70);
 }
 static RECT g_keyRect; static int g_keyShow;
+static int pageOwner(HDC dc, int x, int y, int w);
 static int pageLicense(HDC dc, int x, int y, int w) {
     int pw = w > S(760) ? S(760) : w;
+    if (IS_OWNER) return pageOwner(dc, x, y, w);
     if (g_status[0]) y += Text(dc, g_status, x, y, pw, fBody, C_WHITE, 1, DT_WORDBREAK) + S(16);
     if (g_pro) {
+        RECT rp = {x, y + S(126), x + S(260), y + S(168)};
+        Button(dc, rp, L"Replay Pro animation", B_REPLAY);
         RECT c = {x, y, x + pw, y + S(110)};
         GlowBox(dc, c, S(14));
         Text(dc, L"Pro is active on this PC", c.left + S(20), c.top + S(18), pw - S(40), fStat, C_WHITE, 1, DT_SINGLELINE);
         Text(dc, L"Every tweak, profile and addon is unlocked for life. Your code is tied to this PC, so it won't work on another one.", c.left + S(20), c.top + S(54), pw - S(40), fSmall, C_DIM, 0, DT_WORDBREAK);
-        return y + S(130);
+        return y + S(190);
     }
     WCHAR lt[400]; swprintf(lt, 400, L"FREE gives you the live dashboard, %d saved presets, %d core tweaks, the assistant and 3 addons - forever. PRO unlocks all %d tweaks, unlimited presets, the FPS and low-latency presets, Fortnite profiles, Ultimate Mode and every addon, with one payment and no subscription.", FREE_PRESETS, (int)(sizeof freeTweaks / sizeof freeTweaks[0]), NTWEAKS);
     y += Text(dc, lt, x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(22);
@@ -504,6 +508,40 @@ static int pageChat(HDC dc, int x, int y, int w) {
         y += bh + S(12);
     }
     return y + S(110);
+}
+static int pageOwner(HDC dc, int x, int y, int w) {
+#ifdef OWNER_BUILD
+    int pw = w > S(780) ? S(780) : w;
+    if (g_status[0]) y += Text(dc, g_status, x, y, pw, fBody, C_WHITE, 1, DT_WORDBREAK) + S(14);
+    RECT c = {x, y, x + pw, y + S(96)}; GlowBox(dc, c, S(14));
+    Text(dc, L"Owner version - everything is unlocked", c.left + S(20), c.top + S(16), pw - S(40), fStat, C_WHITE, 1, DT_SINGLELINE);
+    Text(dc, L"Every tweak, profile, preset and addon is on. This build is for you only - don't share it.", c.left + S(20), c.top + S(54), pw - S(40), fSmall, C_DIM, 0, DT_WORDBREAK);
+    y += S(116);
+    RECT rp = {x, y, x + S(260), y + S(42)}; Button(dc, rp, L"Replay Pro animation", B_REPLAY);
+    y += S(70);
+    y += Text(dc, L"MAKE A PRO CODE FOR A CUSTOMER", x, y, pw, fH2, RGBW(210), 1, DT_SINGLELINE) + S(10);
+    y += Text(dc, L"Paste the PC ID the customer sends you, then click Make code. Needs nero_private_key.bin in the same folder as this exe.", x, y, pw, fSmall, C_DIM, 0, DT_WORDBREAK) + S(12);
+    g_keyRect.left = x; g_keyRect.top = y; g_keyRect.right = x + pw - S(170); g_keyRect.bottom = y + S(38); g_keyShow = 1;
+    RECT mb = {x + pw - S(158), y, x + pw, y + S(38)}; Button(dc, mb, L"Make code", B_MAKECODE);
+    y += S(56);
+    if (g_ownerCode[0]) {
+        WCHAR shown[260]; int o = 0, groups = 0;
+        for (const WCHAR *p = g_ownerCode; *p && o < 250; p++) {
+            if (*p == L'-') { if (++groups % 4 == 0) { shown[o++] = L'\n'; continue; } }
+            shown[o++] = *p;
+        }
+        shown[o] = 0;
+        RECT m = {0, 0, pw - S(32), 4000}; SelectObject(dc, fBody); DrawTextW(dc, shown, -1, &m, DT_CALCRECT | DT_NOPREFIX);
+        RECT cr = {x, y, x + pw, y + (m.bottom - m.top) + S(28)}; Box(dc, cr, C_PANEL, C_WHITE, S(12));
+        Text(dc, shown, cr.left + S(16), cr.top + S(14), pw - S(32), fBody, C_WHITE, 1, 0);
+        y = cr.bottom + S(14);
+        RECT cb = {x, y, x + S(170), y + S(42)}; Button(dc, cb, L"Copy code", B_COPYCODE);
+        y += S(60);
+    }
+    return y + S(20);
+#else
+    (void)dc; (void)x; (void)w; return y;
+#endif
 }
 static int pageIcons(HDC dc, int x, int y, int w) {
     int pw = w > S(900) ? S(900) : w;
@@ -659,8 +697,10 @@ static void paint(HDC wdc, int W, int H) {
     int end;
     if (g_page == 0) end = pageHome(dc, x, y, w);
     else {
-        y += Text(dc, titles[g_page], x, y, w, fTitle, C_WHITE, 1, DT_SINGLELINE) + S(6);
-        y += Text(dc, taglines[g_page], x, y, w, fBody, C_DIM, 0, DT_WORDBREAK) + S(24);
+        const WCHAR *ttl = (IS_OWNER && g_page == 7) ? L"Owner Tools" : (g_pro && g_page == 7) ? L"Pro License" : titles[g_page];
+        const WCHAR *tag = (IS_OWNER && g_page == 7) ? L"Make Pro codes for customers and replay the Pro animation." : (g_pro && g_page == 7) ? L"Thank you for supporting Nero Tweaks." : taglines[g_page];
+        y += Text(dc, ttl, x, y, w, fTitle, C_WHITE, 1, DT_SINGLELINE) + S(6);
+        y += Text(dc, tag, x, y, w, fBody, C_DIM, 0, DT_WORDBREAK) + S(24);
         if (g_page >= 2 && g_page <= 4 && g_status[0]) y += Text(dc, g_status, x, y, w, fBody, C_WHITE, 1, DT_WORDBREAK) + S(14);
         switch (g_page) {
             case 1: end = pagePresets(dc, x, y, w); break;
@@ -679,7 +719,7 @@ static void paint(HDC wdc, int W, int H) {
     // header strip: plan, version, update
     RECT hb = {sw, 0, W, S(40)}; HBRUSH hbb = CreateSolidBrush(C_BG); FillRect(dc, &hb, hbb); DeleteObject(hbb);
     {
-        WCHAR vt[80]; swprintf(vt, 80, L"%ls   v%ls", g_pro ? L"PRO VERSION" : L"FREE VERSION", APP_VERSION);
+        WCHAR vt[80]; swprintf(vt, 80, L"%ls   v%ls", planName(), APP_VERSION);
         int right = W - S(24);
         if (g_updAvail) {
             WCHAR ut[48]; swprintf(ut, 48, g_updBusy ? L"Updating..." : L"Update to v%ls", g_updVer);
@@ -706,15 +746,15 @@ static void paint(HDC wdc, int W, int H) {
     MoveToEx(dc, sw - 1, 0, NULL); LineTo(dc, sw - 1, H); SelectObject(dc, op); DeleteObject(lp);
     drawLogo(dc, S(10), S(14), sw - S(20));
     int lh = (sw - S(20)) * g_logoH / g_logoW;
-    Text(dc, g_pro ? L"T  W  E  A  K  S   PRO VERSION" : L"T  W  E  A  K  S   FREE VERSION", S(26), S(14) + lh - S(4), sw, fSmall, C_DIM, 0, DT_SINGLELINE);
+    Text(dc, IS_OWNER ? L"T  W  E  A  K  S   OWNER VERSION" : g_pro ? L"T  W  E  A  K  S   PRO VERSION" : L"T  W  E  A  K  S   FREE VERSION", S(26), S(14) + lh - S(4), sw, fSmall, C_DIM, 0, DT_SINGLELINE);
     int ny = S(14) + lh + S(36);
     for (int i = 0; i < 8; i++) {
         RECT r = {S(14), ny, sw - S(14), ny + S(54)};
         int act = i == g_page, hv = hovered(r);
         if (act) { GlowBox(dc, r, S(12)); RECT bar2 = {0, r.top + S(12), S(4), r.bottom - S(12)}; HBRUSH bb2 = CreateSolidBrush(C_WHITE); FillRect(dc, &bar2, bb2); DeleteObject(bb2); }
         else if (hv) Box(dc, r, RGBW(17), RGBW(17), S(12));
-        Text(dc, i == 7 && g_pro ? L"Pro License" : navName[i], r.left + S(18), r.top + S(8), r.right - r.left - S(24), fNav, act || hv ? C_WHITE : RGBW(185), act, DT_SINGLELINE);
-        Text(dc, i == 7 && g_pro ? L"Active - thank you" : navSub[i], r.left + S(18), r.top + S(31), r.right - r.left - S(24), fNavSub, act ? RGBW(170) : RGBW(100), 0, DT_SINGLELINE);
+        Text(dc, i == 7 && g_pro ? (IS_OWNER ? L"Owner Tools" : L"Pro License") : navName[i], r.left + S(18), r.top + S(8), r.right - r.left - S(24), fNav, act || hv ? C_WHITE : RGBW(185), act, DT_SINGLELINE);
+        Text(dc, i == 7 && g_pro ? (IS_OWNER ? L"Codes & animation" : L"Active - thank you") : navSub[i], r.left + S(18), r.top + S(31), r.right - r.left - S(24), fNavSub, act ? RGBW(170) : RGBW(100), 0, DT_SINGLELINE);
         addHit(r, K_NAV, i, 0);
         ny += S(58);
     }
@@ -785,12 +825,24 @@ static void acceptName(void) {
     InvalidateRect(g_hwnd, NULL, FALSE);
 }
 static void updateTitle(void) {
-    SetWindowTextW(g_hwnd, g_pro ? L"Nero Tweaks - Pro Version" : L"Nero Tweaks - Free Version");
+    SetWindowTextW(g_hwnd, IS_OWNER ? L"Nero Tweaks - Owner Version" : g_pro ? L"Nero Tweaks - Pro Version" : L"Nero Tweaks - Free Version");
 }
 static void lockedMsg(void) {
     setPage(7);
     wcscpy(g_status, L"That's a Pro feature. Unlock it below with your Pro code.");
 }
+#ifdef OWNER_BUILD
+static void copyText(const WCHAR *t) {
+    size_t n = (wcslen(t) + 1) * sizeof(WCHAR);
+    if (OpenClipboard(g_hwnd)) {
+        EmptyClipboard();
+        HGLOBAL m = GlobalAlloc(GMEM_MOVEABLE, n);
+        if (m) { memcpy(GlobalLock(m), t, n); GlobalUnlock(m); SetClipboardData(CF_UNICODETEXT, m); }
+        CloseClipboard();
+        wcscpy(g_status, L"Copied to your clipboard.");
+    }
+}
+#endif
 static void copyId(void) {
     size_t n = (wcslen(g_machine) + 1) * sizeof(WCHAR);
     if (OpenClipboard(g_hwnd)) {
@@ -816,6 +868,11 @@ static int confirmBulk(int on) {
     if (on == 2) return MessageBoxW(g_hwnd, L"This turns on the tweaks tagged FPS and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?", L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
     swprintf(m, 300, on ? L"This turns on all %d tweaks and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?" : L"This turns off all tweaks and puts your settings back. Continue?", NTWEAKS);
     return MessageBoxW(g_hwnd, m, L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
+}
+static void ownerHook(void) {
+#ifdef OWNER_BUILD
+    WCHAR q[120]; GetWindowTextW(g_keyEdit, q, 120); ownerMakeCode(q);
+#endif
 }
 static void doSearch(void) { WCHAR q[200]; GetWindowTextW(g_keyEdit, q, 200); startSearch(q); }
 static void runAnalyze(void) {
@@ -848,7 +905,12 @@ static void click(int mx, int my) {
                 else if (h->a == 0) tweakToggle(h->b); else if (h->a == 1) gameToggle(h->b); else addonClick(h->b);
                 break;
             case K_BTN:
-                if (h->a == B_PSAVE) {
+                if (h->a == B_REPLAY) startUnlockAnim();
+#ifdef OWNER_BUILD
+                else if (h->a == B_MAKECODE) { WCHAR q[120]; GetWindowTextW(g_keyEdit, q, 120); ownerMakeCode(q); }
+                else if (h->a == B_COPYCODE) copyText(g_ownerCode);
+#endif
+                else if (h->a == B_PSAVE) {
                     if (!g_pro && npresets >= FREE_PRESETS) { lockedMsg(); wcscpy(g_status, L"Free includes 2 presets. Pro unlocks unlimited presets."); }
                     else if (npresets >= MAXPRESETS) wcscpy(g_status, L"You've reached the preset limit.");
                     else showModal(1, L"");
@@ -898,7 +960,7 @@ static void clampScroll(void) {
 }
 
 static void placeEdit(HWND e, int show, RECT r) {
-    if (show && !g_welcome) {
+    if (show && !g_welcome && !g_anim) {
         RECT cur; GetWindowRect(e, &cur); MapWindowPoints(NULL, g_hwnd, (POINT *)&cur, 2);
         if (!EqualRect(&r, &cur) || !IsWindowVisible(e)) { MoveWindow(e, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE); ShowWindow(e, SW_SHOWNA); }
     } else if (IsWindowVisible(e)) ShowWindow(e, SW_HIDE);
@@ -909,7 +971,7 @@ static void placeKeyEdit(void) {
 }
 static WNDPROC oldEdit;
 static LRESULT CALLBACK editProc(HWND h, UINT m, WPARAM w, LPARAM l) {
-    if (m == WM_KEYDOWN && w == VK_RETURN) { if (h == g_keyEdit) { if (g_page == 8) doSearch(); else activate(); InvalidateRect(g_hwnd, NULL, FALSE); } else if (h == g_chatEdit) sendChat(); else acceptName(); return 0; }
+    if (m == WM_KEYDOWN && w == VK_RETURN) { if (h == g_keyEdit) { if (g_page == 8) doSearch(); else if (IS_OWNER) { ownerHook(); } else activate(); InvalidateRect(g_hwnd, NULL, FALSE); } else if (h == g_chatEdit) sendChat(); else acceptName(); return 0; }
     if (m == WM_CHAR && w == VK_RETURN) return 0;
     return CallWindowProcW(oldEdit, h, m, w, l);
 }
@@ -1023,7 +1085,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     if (GetPrivateProfileIntW(L"addons", L"a0", 0, g_ini)) { addons[0].on = 1; overlaySet(1); }
     readStats();
     chatAdd(L"Hi! I'm the Nero Assistant. I run on your PC with no internet needed. Press Analyze my PC and I'll read your live stats and recommend tweaks, or ask me about FPS, ping, input delay or stutter.", 0);
-    CreateThread(NULL, 0, updateCheckThread, NULL, 0, NULL);
+    if (!IS_OWNER) CreateThread(NULL, 0, updateCheckThread, NULL, 0, NULL);   // owner build must never self-replace with the public free build
     CreateThread(NULL, 0, gpuThread, NULL, 0, NULL);
     if (!g_name[0]) showWelcome();
     MSG msg;

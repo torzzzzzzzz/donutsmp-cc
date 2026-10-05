@@ -65,7 +65,7 @@ static void loadLicense(void) {
 }
 
 // Free tier: these tweaks and addons always work. Everything else needs Pro.
-static const int freeTweaks[] = {1, 2, 3, 10, 11, 13};   // Game Mode, Game DVR, Game Bar, Mouse accel, Sticky keys, Background apps
+static const int freeTweaks[] = {1, 2, 3, 10, 11, 13, 16};   // Game Mode, Game DVR, Game Bar, Mouse accel, Sticky keys, Background apps, Fast keyboard
 static int tweakLocked(int t) {
     if (g_pro) return 0;
     for (int i = 0; i < (int)(sizeof freeTweaks / sizeof freeTweaks[0]); i++) if (freeTweaks[i] == t) return 0;

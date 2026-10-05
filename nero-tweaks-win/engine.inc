@@ -46,13 +46,18 @@ static const RegOp opsSticky[] = {
     STR(HKCU_, L"Control Panel\\Accessibility\\Keyboard Response", L"Flags", L"122", L"126"),
     STR(HKCU_, L"Control Panel\\Accessibility\\ToggleKeys", L"Flags", L"58", L"62")};
 static const RegOp opsFortnite[] = {D(HKLM_, K_FN, L"CpuPriorityClass", 3, -1)};
+static const RegOp opsTimer[] = {D(HKLM_, L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\kernel", L"GlobalTimerResolutionRequests", 1, -1)};
+static const RegOp opsKb[] = {STR(HKCU_, L"Control Panel\\Keyboard", L"KeyboardDelay", L"0", L"1")};
+static const RegOp opsFg[] = {D(HKLM_, L"SYSTEM\\CurrentControlSet\\Control\\PriorityControl", L"Win32PrioritySeparation", 0x26, 2)};
 static const RegOp opsBg[] = {
     D(HKCU_, L"Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", L"GlobalUserDisabled", 1, 0),
     D(HKLM_, L"SOFTWARE\\Policies\\Microsoft\\Windows\\AppPrivacy", L"LetAppsRunInBackground", 2, -1)};
 
 static const int recSet[] = {0, 2, 3, 5, 6, 12, 13};
+static const int latSet[] = {4, 10, 15, 16, 17};
+static int isLat(int t) { for (int i = 0; i < (int)(sizeof latSet / sizeof latSet[0]); i++) if (latSet[i] == t) return 1; return 0; }
 static int isRec(int t) { for (int i = 0; i < (int)(sizeof recSet / sizeof recSet[0]); i++) if (recSet[i] == t) return 1; return 0; }
-enum { SP_REG, SP_POWER, SP_NAGLE, SP_HIBER, SP_MOUSE };
+enum { SP_REG, SP_POWER, SP_NAGLE, SP_HIBER, SP_MOUSE, SP_KB };
 typedef struct { const WCHAR *name, *desc; const RegOp *ops; int nops; int special; } TweakDef;
 #define OPS(a) a, (int)(sizeof(a) / sizeof(a[0]))
 static const TweakDef tdefs[NTWEAKS] = {
@@ -70,7 +75,11 @@ static const TweakDef tdefs[NTWEAKS] = {
     {L"Disable Sticky Keys Popup", L"Stops the Shift-key popup from minimizing your game.", OPS(opsSticky), SP_REG},
     {L"Fortnite High CPU Priority", L"Makes Windows always run Fortnite at High priority.", OPS(opsFortnite), SP_REG},
     {L"Disable Background Apps", L"Stops apps running behind the scenes and using CPU.", OPS(opsBg), SP_REG},
-    {L"Disable Hibernation", L"Frees several GB of disk space and skips Fast Startup.", NULL, 0, SP_HIBER}};
+    {L"Disable Hibernation", L"Frees several GB of disk space and skips Fast Startup.", NULL, 0, SP_HIBER},
+    {L"Precise System Timer", L"Lets games use a 0.5 ms timer for steadier frames and input.", OPS(opsTimer), SP_REG},
+    {L"Fast Keyboard Response", L"Shortest key-repeat delay so presses register sooner.", OPS(opsKb), SP_KB},
+    {L"Foreground App Boost", L"Gives the game you're playing the biggest CPU time slice.", OPS(opsFg), SP_REG}};
+_Static_assert(sizeof(tdefs) / sizeof(tdefs[0]) == NTWEAKS, "tdefs must match NTWEAKS");
 
 // ---- registry helpers ----
 static int regRead(const RegOp *o, int *exists, DWORD *d, WCHAR *s, int slen) {
@@ -192,6 +201,13 @@ static void mouseApply(void) {
     SystemParametersInfoW(SPI_SETMOUSE, 0, v, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
 }
 
+static void kbApply(void) {
+    int ex; DWORD d; WCHAR s[16] = L"";
+    regRead(&opsKb[0], &ex, &d, s, 16);
+    int v = ex ? _wtoi(s) : 1;
+    SystemParametersInfoW(SPI_SETKEYBOARDDELAY, v, NULL, SPIF_UPDATEINIFILE | SPIF_SENDCHANGE);
+}
+
 // ---- generic apply / revert / state ----
 static int isTweakOn(int t) {
     const TweakDef *d = &tdefs[t];
@@ -221,6 +237,7 @@ static int applyTweak(int t) {
         if (!regWrite(o, o->onD, o->onS)) ok = 0;
     }
     if (d->special == SP_MOUSE) mouseApply();
+    if (d->special == SP_KB) kbApply();
     return ok;
 }
 static int revertTweak(int t) {
@@ -241,6 +258,7 @@ static int revertTweak(int t) {
         WritePrivateProfileStringW(L"orig", key, NULL, g_ini);
     }
     if (d->special == SP_MOUSE) mouseApply();
+    if (d->special == SP_KB) kbApply();
     return ok;
 }
 static void tweakToggle(int t) {
@@ -250,15 +268,18 @@ static void tweakToggle(int t) {
     if (tweaks[t].on == want) swprintf(g_status, 400, L"%ls: %ls.", tdefs[t].name, want ? L"on" : L"off");
     else swprintf(g_status, 400, L"Couldn't change \"%ls\"%ls. Make sure Nero Tweaks is running as administrator.", tdefs[t].name, ok ? L" (Windows didn't accept it)" : L"");
 }
-static void applyRecommended(void) {
-    int n = 0, locked = 0;
-    for (int i = 0; i < NTWEAKS; i++) {
-        if (!isRec(i) || tweaks[i].on) continue;
+static void applySet(const int *set, int n, const WCHAR *label) {
+    int done = 0, locked = 0;
+    for (int k = 0; k < n; k++) {
+        int i = set[k];
+        if (tweaks[i].on) continue;
         if (tweakLocked(i)) { locked++; continue; }
-        applyTweak(i); tweaks[i].on = isTweakOn(i); n += tweaks[i].on;
+        applyTweak(i); tweaks[i].on = isTweakOn(i); done += tweaks[i].on;
     }
-    swprintf(g_status, 400, L"FPS preset: %d tweak%ls applied.%ls Restart your PC for best results.", n, n == 1 ? L"" : L"s", locked ? L" The rest need Pro." : L"");
+    swprintf(g_status, 400, L"%ls: %d tweak%ls applied.%ls Restart your PC for best results.", label, done, done == 1 ? L"" : L"s", locked ? L" The rest need Pro." : L"");
 }
+static void applyRecommended(void) { applySet(recSet, (int)(sizeof recSet / sizeof recSet[0]), L"FPS preset"); }
+static void applyLowLatency(void) { applySet(latSet, (int)(sizeof latSet / sizeof latSet[0]), L"Low-latency preset"); }
 static void setAll(int v) {
     int n = 0, bad = 0;
     for (int i = 0; i < NTWEAKS; i++) {

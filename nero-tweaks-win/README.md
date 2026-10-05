@@ -28,3 +28,13 @@ The code is a signature of that PC's ID, so a friend with a different PC can't u
 **Keep `nero_private_key.pem` secret and backed up** - anyone with it can make codes, and if you lose it you can't issue more for this build.
 `tools/make_keys.py` makes a new key pair (then rebuild the exe with the new `pubkey.inc`).
 Free vs Pro lists are in `license.inc` (`freeTweaks`, `itemLocked`).
+
+## v1.1.0
+
+- **Presets** (replaces Restore Point page): save your current tweaks under a name with a Fortnite item as the icon, apply in one click. Free: 2 presets, Pro: unlimited. The Windows restore point button is still there.
+- **Input-delay tweaks**: precise system timer, fast keyboard response, foreground app boost, plus an *Apply low-latency preset* button.
+- **Nero Assistant** (replaces AI Chat): offline helper that reads your live stats and recommends tweaks. No internet, no API key.
+- **In-app updater**: the app checks `version.txt` on GitHub at startup and shows an *Update* button when a newer version is published.
+  To release an update: rebuild, bump `APP_VERSION` in `features.inc`, bump `version.txt`, commit and push both.
+  `UPDATE_BASE` in `features.inc` points at the branch the files are served from - change it if you move to `main`.
+- Fortnite item icons come from the public fortnite-api.com item list (needs internet only when picking an icon).

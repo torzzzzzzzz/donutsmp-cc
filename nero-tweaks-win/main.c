@@ -16,20 +16,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <ctype.h>
+#include <wctype.h>
 #include <string.h>
 
 #define S(x) ((int)((x) * g_sc + 0.5))
 #define HIST 60
-#define NTWEAKS 15
+#define NTWEAKS 18
 
 static double g_sc = 1.0;
-static HWND g_hwnd, g_edit;
+static HWND g_hwnd, g_edit, g_chatEdit;
+static int g_modalMode;
+static DWORD g_fadeStart;
+static RECT g_chatRect; static int g_chatShow;
 static HFONT fTitle, fH2, fBody, fSmall, fStat, fNav, fNavSub, fBtn;
 static HBITMAP g_logo;
 static int g_logoW, g_logoH;
 static WCHAR g_name[64];
 static WCHAR g_ini[MAX_PATH];
 static int g_page = 0, g_scroll = 0, g_contentH = 0, g_welcome = 0;
+static void setPage(int p) {
+    g_page = p; g_scroll = p == 6 ? (1 << 20) : 0; g_fadeStart = GetTickCount();
+    SetTimer(g_hwnd, 3, 16, NULL);
+}
 static int g_mx = -1, g_my = -1;
 static WCHAR g_status[400] = L"";
 static HWND g_overlay;
@@ -61,8 +70,8 @@ static List lists[] = {
  {L"games", L"g", 2, games},
  {L"addons", L"a", 5, addons}};
 
-static const WCHAR *navName[] = {L"Home", L"Restore Point", L"Game Library", L"Optimizations", L"Addons", L"Ultimate Mode", L"AI Chat", L"Get Pro"};
-static const WCHAR *navSub[] = {L"Your PC at a glance", L"Back up first", L"Pick a game", L"Turn tweaks on/off", L"Optional extras", L"Everything at once", L"Quick answers", L"Unlock everything"};
+static const WCHAR *navName[] = {L"Home", L"Presets", L"Game Library", L"Optimizations", L"Addons", L"Ultimate Mode", L"Nero Assistant", L"Get Pro"};
+static const WCHAR *navSub[] = {L"Your PC at a glance", L"Save your setups", L"Pick a game", L"Turn tweaks on/off", L"Optional extras", L"Everything at once", L"Ask or analyze my PC", L"Unlock everything"};
 
 // ---------- config ----------
 static void cfgPath(void) {
@@ -228,9 +237,10 @@ static DWORD WINAPI restoreThread(LPVOID p) {
 // ---------- drawing helpers ----------
 #include "license.inc"
 #include "engine.inc"
+#include "features.inc"
 
 enum { K_NAV, K_STEP, K_TOG, K_BTN, K_NAME };
-enum { B_COPYID, B_ACTIVATE, B_FPS, B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
+enum { B_PSAVE, B_PAPPLY, B_PICON, B_PDEL, B_ICONPICK, B_ICONCLEAR, B_ICONBACK, B_SEARCH, B_SEND, B_ANALYZE, B_UPDATE, B_LAT, B_MCANCEL, B_COPYID, B_ACTIVATE, B_FPS, B_ALLON, B_ALLOFF, B_RESTORE, B_ULTIMATE, B_WELCOME };
 typedef struct { RECT r; int kind, a, b; } Hit;
 static Hit hits[400]; static int nhits;
 static void addHit(RECT r, int kind, int a, int b) {
@@ -269,12 +279,13 @@ static void GlowBox(HDC dc, RECT r, int rad) {
     }
     Box(dc, r, C_PANEL, C_WHITE, rad);
 }
-static void Button(HDC dc, RECT r, const WCHAR *label, int id) {
+static void ButtonX(HDC dc, RECT r, const WCHAR *label, int id, int bArg) {
     int hv = hovered(r);
     if (hv) { Box(dc, r, C_WHITE, C_WHITE, S(12)); Text(dc, label, r.left, r.top + (r.bottom - r.top - S(18)) / 2, r.right - r.left, fBtn, C_BG, 0, DT_CENTER | DT_SINGLELINE); }
     else { GlowBox(dc, r, S(12)); Text(dc, label, r.left, r.top + (r.bottom - r.top - S(18)) / 2, r.right - r.left, fBtn, C_WHITE, 1, DT_CENTER | DT_SINGLELINE); }
-    addHit(r, K_BTN, id, 0);
+    addHit(r, K_BTN, id, bArg);
 }
+static void Button(HDC dc, RECT r, const WCHAR *label, int id) { ButtonX(dc, r, label, id, 0); }
 static void Switch(HDC dc, int x, int y, int on) {
     int w = S(38), h = S(20);
     RECT r = {x, y, x + w, y + h};
@@ -334,8 +345,8 @@ static int pageHome(HDC dc, int x, int y, int w) {
     y += h + S(6);
     y += Text(dc, L"Welcome back - let's get you smoother Fortnite with fewer lag spikes.  (click your name to change it)", x, y, w, fBody, C_DIM, 0, DT_WORDBREAK) + S(26);
     y += Text(dc, L"GETTING STARTED", x, y, w, fH2, RGBW(210), 1, DT_SINGLELINE) + S(12);
-    static const WCHAR *st1[3] = {L"1  Make a safety backup", L"2  Pick your tweaks", L"3  Or do it all at once"};
-    static const WCHAR *st2[3] = {L"One click, and you can undo everything later.", L"Switch on what you want. Each one explains itself.", L"Ultimate Mode turns on every tweak."};
+    static const WCHAR *st1[3] = {L"1  Save your setup", L"2  Pick your tweaks", L"3  Or do it all at once"};
+    static const WCHAR *st2[3] = {L"Save tweak setups as named presets and switch in one click.", L"Switch on what you want. Each one explains itself.", L"Ultimate Mode turns on every tweak."};
     static const int tgt[3] = {1, 3, 5};
     int n = 3, gap = S(14), cw = (w - gap * (n - 1)) / n, ch = S(92);
     for (int i = 0; i < n; i++) {
@@ -369,8 +380,8 @@ static int pageHome(HDC dc, int x, int y, int w) {
 static int pageList(HDC dc, int x, int y, int w, int li, int bulk) {
     List *L = &lists[li];
     if (bulk) {
-        RECT f = {x, y, x + S(200), y + S(40)}, a = {x + S(216), y, x + S(366), y + S(40)}, b = {x + S(382), y, x + S(532), y + S(40)};
-        Button(dc, f, L"Apply FPS preset", B_FPS); Button(dc, a, L"Turn all on", B_ALLON); Button(dc, b, L"Turn all off", B_ALLOFF);
+        RECT f = {x, y, x + S(190), y + S(40)}, g = {x + S(204), y, x + S(444), y + S(40)}, a = {x + S(458), y, x + S(598), y + S(40)}, b = {x + S(612), y, x + S(752), y + S(40)};
+        Button(dc, f, L"Apply FPS preset", B_FPS); Button(dc, g, L"Apply low-latency preset", B_LAT); Button(dc, a, L"Turn all on", B_ALLON); Button(dc, b, L"Turn all off", B_ALLOFF);
         y += S(60);
     }
     int cols = w >= S(760) ? 2 : 1, gap = S(10), cw = (w - gap * (cols - 1)) / cols, rh = S(66);
@@ -380,10 +391,10 @@ static int pageList(HDC dc, int x, int y, int w, int li, int bulk) {
         Item *it = &L->items[i];
         Box(dc, r, C_PANEL, it->on ? C_WHITE : (hovered(r) ? RGBW(120) : RGBW(35)), S(10));
         Text(dc, it->name, r.left + S(14), r.top + S(12), cw - S(100), fBody, C_WHITE, it->on, DT_SINGLELINE | DT_END_ELLIPSIS);
-        if (li == 0 && isRec(i)) {
+        if (li == 0 && (isRec(i) || isLat(i))) {
             SIZE sz; SelectObject(dc, fBody); GetTextExtentPoint32W(dc, it->name, (int)wcslen(it->name), &sz);
             int tx = r.left + S(14) + sz.cx + S(10);
-            if (tx + S(40) < r.right - S(60)) Text(dc, L"FPS", tx, r.top + S(14), S(40), fSmall, RGBW(200), 1, DT_SINGLELINE);
+            if (tx + S(50) < r.right - S(60)) Text(dc, isRec(i) ? L"FPS" : L"INPUT", tx, r.top + S(14), S(60), fSmall, RGBW(200), 1, DT_SINGLELINE);
         }
         Text(dc, it->desc, r.left + S(14), r.top + S(36), cw - S(100), fSmall, C_DIM, 0, DT_SINGLELINE | DT_END_ELLIPSIS);
         if (itemLocked(li, i)) {
@@ -401,12 +412,46 @@ static int pageList(HDC dc, int x, int y, int w, int li, int bulk) {
     return y + ((L->n + cols - 1) / cols) * (rh + gap) + S(10);
 }
 
-static int pageRestore(HDC dc, int x, int y, int w) {
-    RECT b = {x, y, x + S(240), y + S(42)};
-    Button(dc, b, L"+ Create restore point", B_RESTORE);
-    y += S(62);
-    if (g_status[0]) y += Text(dc, g_status, x, y, w > S(700) ? S(700) : w, fBody, C_WHITE, 1, DT_WORDBREAK) + S(12);
-    y += Text(dc, L"This asks Windows to save a System Restore point. If something feels off later, open \"Create a restore point\" in Windows and roll back.", x, y, w > S(700) ? S(700) : w, fBody, C_DIM, 0, DT_WORDBREAK);
+static void frameRect(HDC dc, RECT r, COLORREF c) {
+    HPEN p = CreatePen(PS_SOLID, 1, c); HGDIOBJ op = SelectObject(dc, p), ob = SelectObject(dc, GetStockObject(NULL_BRUSH));
+    Rectangle(dc, r.left, r.top, r.right, r.bottom); SelectObject(dc, op); SelectObject(dc, ob); DeleteObject(p);
+}
+static void drawIcon(HDC dc, HBITMAP bm, RECT r) {
+    HDC m = CreateCompatibleDC(dc); HGDIOBJ o = SelectObject(m, bm); BITMAP bi; GetObject(bm, sizeof bi, &bi);
+    int old = SetStretchBltMode(dc, HALFTONE); SetBrushOrgEx(dc, 0, 0, NULL);
+    StretchBlt(dc, r.left, r.top, r.right - r.left, r.bottom - r.top, m, 0, 0, bi.bmWidth, bi.bmHeight, SRCCOPY);
+    SetStretchBltMode(dc, old); SelectObject(m, o); DeleteDC(m);
+}
+static int pagePresets(HDC dc, int x, int y, int w) {
+    int pw = w > S(900) ? S(900) : w;
+    if (g_status[0]) y += Text(dc, g_status, x, y, pw, fBody, C_WHITE, 1, DT_WORDBREAK) + S(14);
+    RECT a = {x, y, x + S(320), y + S(42)}, b = {x + S(336), y, x + S(656), y + S(42)};
+    ButtonX(dc, a, L"+ Save current setup as preset", B_PSAVE, 0);
+    ButtonX(dc, b, L"Create Windows restore point", B_RESTORE, 0);
+    y += S(56);
+    WCHAR note[200];
+    if (g_pro) swprintf(note, 200, L"%d saved. Pro: unlimited presets.", npresets);
+    else swprintf(note, 200, L"%d of %d free presets used. Pro: unlimited.", npresets, FREE_PRESETS);
+    y += Text(dc, note, x, y, pw, fSmall, RGBW(110), 0, DT_SINGLELINE) + S(16);
+    if (!npresets) y += Text(dc, L"No presets yet. Turn on the tweaks you want in Optimizations, then save them here with a name and a Fortnite item as the icon. Switch setups in one click.", x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(10);
+    for (int i = 0; i < npresets; i++) {
+        RECT r = {x, y, x + pw, y + S(88)};
+        Box(dc, r, C_PANEL, hovered(r) ? RGBW(90) : C_LINE, S(14));
+        RECT ib = {r.left + S(14), r.top + S(14), r.left + S(74), r.top + S(74)};
+        HBITMAP bm = iconGet(presets[i].icon);
+        if (bm) { drawIcon(dc, bm, ib); frameRect(dc, ib, hovered(ib) ? C_WHITE : RGBW(90)); }
+        else {
+            Box(dc, ib, RGBW(14), hovered(ib) ? C_WHITE : RGBW(70), S(10));
+            Text(dc, L"+ icon", ib.left, ib.top + S(22), S(60), fSmall, RGBW(150), 0, DT_CENTER | DT_SINGLELINE);
+        }
+        addHit(ib, K_BTN, B_PICON, i);
+        Text(dc, presets[i].name, r.left + S(92), r.top + S(18), pw - S(330), fStat, C_WHITE, 1, DT_SINGLELINE | DT_END_ELLIPSIS);
+        WCHAR sub[64]; swprintf(sub, 64, L"%d tweak%ls on", presetCount(&presets[i]), presetCount(&presets[i]) == 1 ? L"" : L"s");
+        Text(dc, sub, r.left + S(92), r.top + S(54), pw - S(330), fSmall, C_DIM, 0, DT_SINGLELINE);
+        RECT ap = {r.right - S(212), r.top + S(24), r.right - S(112), r.top + S(64)}, dl = {r.right - S(100), r.top + S(24), r.right - S(14), r.top + S(64)};
+        ButtonX(dc, ap, L"Apply", B_PAPPLY, i); ButtonX(dc, dl, L"Delete", B_PDEL, i);
+        y += S(100);
+    }
     return y + S(20);
 }
 static int pageUltimate(HDC dc, int x, int y, int w) {
@@ -429,7 +474,8 @@ static int pageLicense(HDC dc, int x, int y, int w) {
         Text(dc, L"Every tweak, profile and addon is unlocked for life. Your code is tied to this PC, so it won't work on another one.", c.left + S(20), c.top + S(54), pw - S(40), fSmall, C_DIM, 0, DT_WORDBREAK);
         return y + S(130);
     }
-    y += Text(dc, L"FREE gives you the live dashboard, restore points, 6 core tweaks and 3 addons - forever. PRO unlocks all 15 tweaks, the FPS preset, Fortnite profiles, Ultimate Mode and every addon, with one payment and no subscription.", x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(22);
+    WCHAR lt[400]; swprintf(lt, 400, L"FREE gives you the live dashboard, %d saved presets, %d core tweaks, the assistant and 3 addons - forever. PRO unlocks all %d tweaks, unlimited presets, the FPS and low-latency presets, Fortnite profiles, Ultimate Mode and every addon, with one payment and no subscription.", FREE_PRESETS, (int)(sizeof freeTweaks / sizeof freeTweaks[0]), NTWEAKS);
+    y += Text(dc, lt, x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(22);
     y += Text(dc, L"1  YOUR PC ID", x, y, pw, fH2, RGBW(210), 1, DT_SINGLELINE) + S(10);
     RECT idr = {x, y, x + S(360), y + S(46)}; Box(dc, idr, C_PANEL, C_LINE, S(10));
     Text(dc, g_machine, idr.left, idr.top + S(10), idr.right - idr.left, fStat, C_WHITE, 1, DT_CENTER | DT_SINGLELINE);
@@ -445,21 +491,44 @@ static int pageLicense(HDC dc, int x, int y, int w) {
     return y + S(20);
 }
 static int pageChat(HDC dc, int x, int y, int w) {
-    static const WCHAR *qa[][2] = {
-        {L"I get low FPS. What should I do first?", L"Open Optimizations and turn on the Performance tweaks. Make a restore point first."},
-        {L"How do I reduce lag spikes?", L"Try the Network tweaks (Nagle's Algorithm, TCP ACK) and close background apps."},
-        {L"My aim feels floaty.", L"Turn on Disable Mouse Acceleration and Reduce Input Latency in the Input tweaks."},
-        {L"Can I undo everything?", L"Yes - turn tweaks off again, or roll back with your restore point."}};
-    int pw = w > S(760) ? S(760) : w;
-    y += Text(dc, L"A live AI assistant needs an online service and API key, which this offline app doesn't have yet. Here are quick answers for now:", x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(20);
-    for (int i = 0; i < 4; i++) {
-        int h1 = S(86); RECT r = {x, y, x + pw, y + h1};
-        Box(dc, r, C_PANEL, C_LINE, S(12));
-        Text(dc, qa[i][0], r.left + S(16), r.top + S(12), pw - S(32), fBody, C_WHITE, 1, DT_WORDBREAK);
-        Text(dc, qa[i][1], r.left + S(16), r.top + S(42), pw - S(32), fSmall, C_DIM, 0, DT_WORDBREAK);
-        y += h1 + S(10);
+    int pw = w > S(860) ? S(860) : w;
+    for (int i = 0; i < nmsgs; i++) {
+        int maxw = pw * 8 / 10;
+        RECT m = {0, 0, maxw - S(28), 4000};
+        SelectObject(dc, fBody); DrawTextW(dc, msgs[i].t, -1, &m, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
+        int bw = (m.right - m.left) + S(28), bh = (m.bottom - m.top) + S(24);
+        int bx = msgs[i].me ? x + pw - bw : x;
+        RECT r = {bx, y, bx + bw, y + bh};
+        Box(dc, r, msgs[i].me ? RGBW(22) : C_PANEL, msgs[i].me ? C_WHITE : C_LINE, S(14));
+        Text(dc, msgs[i].t, r.left + S(14), r.top + S(12), bw - S(28), fBody, msgs[i].me ? C_WHITE : RGBW(215), msgs[i].me, DT_WORDBREAK);
+        y += bh + S(12);
     }
-    return y;
+    return y + S(110);
+}
+static int pageIcons(HDC dc, int x, int y, int w) {
+    int pw = w > S(900) ? S(900) : w;
+    WCHAR t[260]; const WCHAR *pn = (g_pickPreset >= 0 && g_pickPreset < npresets) ? presets[g_pickPreset].name : L"";
+    swprintf(t, 260, L"Pick an icon for \"%ls\". Search any Fortnite item (skins, pickaxes, emotes, gliders...) and click it.", pn);
+    y += Text(dc, t, x, y, pw, fBody, C_DIM, 0, DT_WORDBREAK) + S(18);
+    g_keyRect.left = x; g_keyRect.top = y; g_keyRect.right = x + pw - S(150); g_keyRect.bottom = y + S(38); g_keyShow = 1;
+    RECT sb = {x + pw - S(138), y, x + pw, y + S(38)}; ButtonX(dc, sb, L"Search", B_SEARCH, 0);
+    y += S(56);
+    y += Text(dc, g_picStatus, x, y, pw, fBody, C_WHITE, 1, DT_WORDBREAK) + S(16);
+    int cell = S(118), cellH = S(140), gap = S(12), cols = (pw + gap) / (cell + gap); if (cols < 1) cols = 1;
+    for (int i = 0; i < nres; i++) {
+        int c = i % cols, rw = i / cols;
+        RECT r = {x + c * (cell + gap), y + rw * (cellH + gap), x + c * (cell + gap) + cell, y + rw * (cellH + gap) + cellH};
+        Box(dc, r, C_PANEL, hovered(r) ? C_WHITE : C_LINE, S(12));
+        RECT ib = {r.left + S(19), r.top + S(10), r.left + S(99), r.top + S(90)};
+        HBITMAP bm = iconGet(results[i].id);
+        if (bm) drawIcon(dc, bm, ib); else Text(dc, L"...", ib.left, ib.top + S(28), S(80), fSmall, RGBW(120), 0, DT_CENTER | DT_SINGLELINE);
+        Text(dc, results[i].name, r.left + S(6), r.top + S(96), cell - S(12), fSmall, C_WHITE, 0, DT_CENTER | DT_WORDBREAK | DT_END_ELLIPSIS);
+        addHit(r, K_BTN, B_ICONPICK, i);
+    }
+    y += ((nres + cols - 1) / cols) * (cellH + gap) + S(10);
+    RECT rb = {x, y, x + S(170), y + S(40)}, bb = {x + S(184), y, x + S(324), y + S(40)};
+    Button(dc, rb, L"Remove icon", B_ICONCLEAR); Button(dc, bb, L"Back", B_ICONBACK);
+    return y + S(70);
 }
 
 static void drawLogo(HDC dc, int x, int y, int w) {
@@ -485,13 +554,15 @@ static int g_anim; static DWORD g_animStart;
 #define ANIM_MS 4600
 static double easeOut(double x) { if (x < 0) x = 0; if (x > 1) x = 1; return 1 - pow(1 - x, 3); }
 static double easeBack(double x) { if (x < 0) x = 0; if (x > 1) x = 1; double c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * pow(x - 1, 3) + c1 * pow(x - 1, 2); }
-static void fillAlpha(HDC dc, int W, int H, int v, int a) {
+static void fillAlphaRect(HDC dc, int x, int y, int W, int H, int v, int a);
+static void fillAlpha(HDC dc, int W, int H, int v, int a) { fillAlphaRect(dc, 0, 0, W, H, v, a); }
+static void fillAlphaRect(HDC dc, int x0, int y0, int W, int H, int v, int a) {
     if (a <= 0) return;
     if (a > 255) a = 255;
     HDC m = CreateCompatibleDC(dc); HBITMAP b = CreateCompatibleBitmap(dc, 1, 1); HGDIOBJ o = SelectObject(m, b);
     SetPixel(m, 0, 0, RGB(v, v, v));
     BLENDFUNCTION bf = {AC_SRC_OVER, 0, (BYTE)a, 0};
-    AlphaBlend(dc, 0, 0, W, H, m, 0, 0, 1, 1, bf);
+    AlphaBlend(dc, x0, y0, W, H, m, 0, 0, 1, 1, bf);
     SelectObject(m, o); DeleteObject(b); DeleteDC(m);
 }
 static void disc(HDC dc, int cx, int cy, int r, int v) {
@@ -582,9 +653,9 @@ static void paint(HDC wdc, int W, int H) {
     if (w < S(300)) w = S(300);
     int hitStart = nhits; (void)hitStart;
     HRGN clip = CreateRectRgn(sw, 0, W, H); SelectClipRgn(dc, clip); DeleteObject(clip);
-    int y = S(34) - g_scroll;
-    const WCHAR *titles[] = {NULL, L"Restore Point", L"Game Library", L"Optimizations", L"Addons", L"Ultimate Mode", L"AI Chat", L"Get Pro"};
-    const WCHAR *taglines[] = {NULL, L"A backup of your settings. If anything feels off, you can go back.", L"Choose a Fortnite profile. For best results also set Rendering Mode to Performance in Fortnite (Settings > Video).", L"Click any tweak to turn it on or off. Tweaks tagged FPS help frame rate most; use Apply FPS preset for just those.", L"Optional extras you can add on.", L"One click, every tweak.", L"Not sure what to pick? Start here.", L"One payment, yours forever on this PC."};
+    int y = S(46) - g_scroll;
+    const WCHAR *titles[] = {NULL, L"Presets", L"Game Library", L"Optimizations", L"Addons", L"Ultimate Mode", L"Nero Assistant", L"Get Pro", L"Pick an Icon"};
+    const WCHAR *taglines[] = {NULL, L"Save your tweak setups with a name and a Fortnite item icon, then switch between them in one click.", L"Choose a Fortnite profile. For best results also set Rendering Mode to Performance in Fortnite (Settings > Video).", L"Click any tweak to turn it on or off. Tweaks tagged FPS help frame rate most; use Apply FPS preset for just those.", L"Optional extras you can add on.", L"One click, every tweak.", L"Runs on your PC, no internet needed. Ask a question or let me analyze your live stats.", L"One payment, yours forever on this PC.", L"Choose a Fortnite item to show on your preset."};
     int end;
     if (g_page == 0) end = pageHome(dc, x, y, w);
     else {
@@ -592,17 +663,41 @@ static void paint(HDC wdc, int W, int H) {
         y += Text(dc, taglines[g_page], x, y, w, fBody, C_DIM, 0, DT_WORDBREAK) + S(24);
         if (g_page >= 2 && g_page <= 4 && g_status[0]) y += Text(dc, g_status, x, y, w, fBody, C_WHITE, 1, DT_WORDBREAK) + S(14);
         switch (g_page) {
-            case 1: end = pageRestore(dc, x, y, w); break;
+            case 1: end = pagePresets(dc, x, y, w); break;
             case 2: end = pageList(dc, x, y, w, 1, 0); break;
             case 3: end = pageList(dc, x, y, w, 0, 1); break;
             case 4: end = pageList(dc, x, y, w, 2, 0); break;
             case 5: end = pageUltimate(dc, x, y, w); break;
             case 6: end = pageChat(dc, x, y, w); break;
-            default: end = pageLicense(dc, x, y, w);
+            case 7: end = pageLicense(dc, x, y, w); break;
+            default: end = pageIcons(dc, x, y, w);
         }
     }
     g_contentH = end + g_scroll + S(30);
     SelectClipRgn(dc, NULL);
+
+    // header strip: plan, version, update
+    RECT hb = {sw, 0, W, S(40)}; HBRUSH hbb = CreateSolidBrush(C_BG); FillRect(dc, &hb, hbb); DeleteObject(hbb);
+    {
+        WCHAR vt[80]; swprintf(vt, 80, L"%ls   v%ls", g_pro ? L"PRO VERSION" : L"FREE VERSION", APP_VERSION);
+        int right = W - S(24);
+        if (g_updAvail) {
+            WCHAR ut[48]; swprintf(ut, 48, g_updBusy ? L"Updating..." : L"Update to v%ls", g_updVer);
+            RECT ub = {W - S(24) - S(170), S(7), W - S(24), S(33)};
+            ButtonX(dc, ub, ut, B_UPDATE, 0); right = ub.left - S(14);
+        }
+        Text(dc, vt, sw, S(12), right - sw, fSmall, RGBW(120), 0, DT_RIGHT | DT_SINGLELINE);
+    }
+    g_chatShow = 0;
+    if (g_page == 6) {
+        RECT cb = {sw, H - S(104), W, H}; HBRUSH cbb = CreateSolidBrush(C_BG); FillRect(dc, &cb, cbb); DeleteObject(cbb);
+        HPEN cp = CreatePen(PS_SOLID, 1, C_LINE); HGDIOBJ cop = SelectObject(dc, cp);
+        MoveToEx(dc, sw, H - S(104), NULL); LineTo(dc, W, H - S(104)); SelectObject(dc, cop); DeleteObject(cp);
+        int ew = W - sw - pad * 2 - S(110) - S(200) - S(20); if (ew < S(120)) ew = S(120);
+        g_chatRect.left = x; g_chatRect.top = H - S(80); g_chatRect.right = x + ew; g_chatRect.bottom = H - S(42); g_chatShow = 1;
+        RECT sb2 = {x + ew + S(10), H - S(82), x + ew + S(110), H - S(40)}, ab = {sb2.right + S(10), H - S(82), sb2.right + S(200), H - S(40)};
+        Button(dc, sb2, L"Send", B_SEND); Button(dc, ab, L"Analyze my PC", B_ANALYZE);
+    }
 
     // sidebar
     RECT sb = {0, 0, sw, H};
@@ -616,7 +711,7 @@ static void paint(HDC wdc, int W, int H) {
     for (int i = 0; i < 8; i++) {
         RECT r = {S(14), ny, sw - S(14), ny + S(54)};
         int act = i == g_page, hv = hovered(r);
-        if (act) { GlowBox(dc, r, S(12)); }
+        if (act) { GlowBox(dc, r, S(12)); RECT bar2 = {0, r.top + S(12), S(4), r.bottom - S(12)}; HBRUSH bb2 = CreateSolidBrush(C_WHITE); FillRect(dc, &bar2, bb2); DeleteObject(bb2); }
         else if (hv) Box(dc, r, RGBW(17), RGBW(17), S(12));
         Text(dc, i == 7 && g_pro ? L"Pro License" : navName[i], r.left + S(18), r.top + S(8), r.right - r.left - S(24), fNav, act || hv ? C_WHITE : RGBW(185), act, DT_SINGLELINE);
         Text(dc, i == 7 && g_pro ? L"Active - thank you" : navSub[i], r.left + S(18), r.top + S(31), r.right - r.left - S(24), fNavSub, act ? RGBW(170) : RGBW(100), 0, DT_SINGLELINE);
@@ -633,17 +728,26 @@ static void paint(HDC wdc, int W, int H) {
     RECT fill = bar; fill.right = bar.left + (bar.right - bar.left) * ac / NTWEAKS;
     HBRUSH fb = CreateSolidBrush(C_WHITE); FillRect(dc, &fill, fb); DeleteObject(fb);
 
-    // welcome overlay
+    {   // page transition: content fades in
+        DWORD e = GetTickCount() - g_fadeStart;
+        if (e < 260) fillAlphaRect(dc, sw, 0, W - sw, H, 0, (int)((1 - easeOut(e / 260.0)) * 255));
+    }
+    // modal overlay (welcome / name a preset)
     if (g_welcome) {
         HBRUSH ov = CreateSolidBrush(RGB(2, 2, 2)); FillRect(dc, &all, ov); DeleteObject(ov);
         int bw = S(380), bh = S(300), bx = (W - bw) / 2, by = (H - bh) / 2;
         RECT card = {bx, by, bx + bw, by + bh};
         GlowBox(dc, card, S(18));
         int lw = S(190); drawLogo(dc, bx + (bw - lw) / 2, by + S(20), lw);
-        Text(dc, L"Welcome to Nero Tweaks", bx, by + S(112), bw, fStat, C_WHITE, 1, DT_CENTER | DT_SINGLELINE);
-        Text(dc, L"What should we call you?", bx, by + S(150), bw, fBody, C_DIM, 0, DT_CENTER | DT_SINGLELINE);
-        RECT b = {bx + S(30), by + S(240), bx + bw - S(30), by + S(282)};
-        Button(dc, b, L"Let's go", B_WELCOME);
+        Text(dc, g_modalMode ? L"Name your preset" : L"Welcome to Nero Tweaks", bx, by + S(112), bw, fStat, C_WHITE, 1, DT_CENTER | DT_SINGLELINE);
+        Text(dc, g_modalMode ? L"For example: Tournament, Low latency" : L"What should we call you?", bx, by + S(150), bw, fBody, C_DIM, 0, DT_CENTER | DT_SINGLELINE);
+        if (g_modalMode) {
+            RECT b = {bx + S(30), by + S(240), bx + bw / 2 - S(6), by + S(282)}, c = {bx + bw / 2 + S(6), by + S(240), bx + bw - S(30), by + S(282)};
+            Button(dc, b, L"Save preset", B_WELCOME); Button(dc, c, L"Cancel", B_MCANCEL);
+        } else {
+            RECT b = {bx + S(30), by + S(240), bx + bw - S(30), by + S(282)};
+            Button(dc, b, L"Let's go", B_WELCOME);
+        }
     }
     if (g_anim) drawUnlock(dc, W, H);
     BitBlt(wdc, 0, 0, W, H, dc, 0, 0, SRCCOPY);
@@ -651,19 +755,30 @@ static void paint(HDC wdc, int W, int H) {
 }
 
 // ---------- logic ----------
-static void showWelcome(void) {
-    g_welcome = 1;
-    SetWindowTextW(g_edit, g_name);
+static void showModal(int mode, const WCHAR *init) {
+    g_welcome = 1; g_modalMode = mode;
+    SendMessageW(g_edit, EM_SETLIMITTEXT, mode ? 30 : 24, 0);
+    SetWindowTextW(g_edit, init);
     RECT rc; GetClientRect(g_hwnd, &rc);
     layoutEdit(rc.right, rc.bottom);
     ShowWindow(g_edit, SW_SHOW); SetFocus(g_edit);
     SendMessageW(g_edit, EM_SETSEL, 0, -1);
     InvalidateRect(g_hwnd, NULL, FALSE);
 }
+static void showWelcome(void) { showModal(0, g_name); }
 static void acceptName(void) {
     WCHAR n[64]; GetWindowTextW(g_edit, n, 64);
     WCHAR *s = n; while (*s == L' ') s++;
     if (!*s) { SetFocus(g_edit); return; }
+    if (g_modalMode == 1) {
+        int idx = presetAdd(s);
+        g_welcome = 0; ShowWindow(g_edit, SW_HIDE); SetFocus(g_hwnd);
+        if (idx >= 0) {
+            g_pickPreset = idx; nres = 0; setPage(8);
+            wcscpy(g_picStatus, L"Preset saved! Now pick an icon (search a Fortnite item), or press Back to skip.");
+        } else wcscpy(g_status, L"You've reached the preset limit.");
+        InvalidateRect(g_hwnd, NULL, FALSE); return;
+    }
     wcscpy(g_name, s);
     WritePrivateProfileStringW(L"user", L"name", g_name, g_ini);
     g_welcome = 0; ShowWindow(g_edit, SW_HIDE); SetFocus(g_hwnd);
@@ -673,7 +788,7 @@ static void updateTitle(void) {
     SetWindowTextW(g_hwnd, g_pro ? L"Nero Tweaks - Pro Version" : L"Nero Tweaks - Free Version");
 }
 static void lockedMsg(void) {
-    g_page = 7; g_scroll = 0;
+    setPage(7);
     wcscpy(g_status, L"That's a Pro feature. Unlock it below with your Pro code.");
 }
 static void copyId(void) {
@@ -697,9 +812,24 @@ static void activate(void) {
 }
 static int confirmBulk(int on) {
     WCHAR m[300];
+    if (on == 3) return MessageBoxW(g_hwnd, L"This turns on the low-latency tweaks (mouse acceleration off, precise timer, fast keyboard, foreground boost) and changes Windows settings.\n\nContinue?", L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
     if (on == 2) return MessageBoxW(g_hwnd, L"This turns on the tweaks tagged FPS and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?", L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
     swprintf(m, 300, on ? L"This turns on all %d tweaks and changes Windows settings.\n\nMake a restore point first if you haven't. Continue?" : L"This turns off all tweaks and puts your settings back. Continue?", NTWEAKS);
     return MessageBoxW(g_hwnd, m, L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES;
+}
+static void doSearch(void) { WCHAR q[200]; GetWindowTextW(g_keyEdit, q, 200); startSearch(q); }
+static void runAnalyze(void) {
+    static WCHAR buf[1400];
+    chatAdd(L"Analyze my PC", 1); analyzePc(buf, 1400); chatAdd(buf, 0); g_scroll = 1 << 20;
+}
+static void sendChat(void) {
+    WCHAR q[300]; static WCHAR buf[1400];
+    GetWindowTextW(g_chatEdit, q, 300);
+    WCHAR *s = q; while (*s == L' ') s++;
+    if (!*s) return;
+    chatAdd(s, 1); answer(s, buf, 1400); chatAdd(buf, 0);
+    SetWindowTextW(g_chatEdit, L""); g_scroll = 1 << 20;
+    InvalidateRect(g_hwnd, NULL, FALSE);
 }
 static void click(int mx, int my) {
     POINT p = {mx, my};
@@ -707,25 +837,42 @@ static void click(int mx, int my) {
     for (int i = nhits - 1; i >= 0; i--) {
         Hit *h = &hits[i];
         if (!PtInRect(&h->r, p)) continue;
-        if (g_welcome && !(h->kind == K_BTN && h->a == B_WELCOME)) continue;
+        if (g_welcome && !(h->kind == K_BTN && (h->a == B_WELCOME || h->a == B_MCANCEL))) continue;
         if (h->kind != K_NAV && mx < S(250)) continue;
         switch (h->kind) {
-            case K_NAV: g_page = h->a; g_scroll = 0; g_status[0] = 0; break;
-            case K_STEP: g_page = h->a; g_scroll = 0; break;
+            case K_NAV: setPage(h->a); g_status[0] = 0; break;
+            case K_STEP: setPage(h->a); break;
             case K_NAME: showWelcome(); break;
             case K_TOG:
                 if (itemLocked(h->a, h->b)) lockedMsg();
                 else if (h->a == 0) tweakToggle(h->b); else if (h->a == 1) gameToggle(h->b); else addonClick(h->b);
                 break;
             case K_BTN:
-                if (h->a == B_COPYID) copyId();
+                if (h->a == B_PSAVE) {
+                    if (!g_pro && npresets >= FREE_PRESETS) { lockedMsg(); wcscpy(g_status, L"Free includes 2 presets. Pro unlocks unlimited presets."); }
+                    else if (npresets >= MAXPRESETS) wcscpy(g_status, L"You've reached the preset limit.");
+                    else showModal(1, L"");
+                }
+                else if (h->a == B_PAPPLY) presetApply(h->b);
+                else if (h->a == B_PICON) { g_pickPreset = h->b; setPage(8); wcscpy(g_picStatus, L"Search any Fortnite item and click it to use as the icon."); }
+                else if (h->a == B_PDEL) { if (MessageBoxW(g_hwnd, L"Delete this preset? (Your current tweaks stay as they are.)", L"Nero Tweaks", MB_YESNO | MB_ICONQUESTION) == IDYES) presetDelete(h->b); }
+                else if (h->a == B_ICONPICK) { if (g_pickPreset >= 0 && g_pickPreset < npresets && h->b < nres) { wcscpy(presets[g_pickPreset].icon, results[h->b].id); presetsSave(); wcscpy(g_status, L"Icon set."); setPage(1); } }
+                else if (h->a == B_ICONCLEAR) { if (g_pickPreset >= 0 && g_pickPreset < npresets) { presets[g_pickPreset].icon[0] = 0; presetsSave(); } setPage(1); }
+                else if (h->a == B_ICONBACK) setPage(1);
+                else if (h->a == B_SEARCH) doSearch();
+                else if (h->a == B_SEND) sendChat();
+                else if (h->a == B_ANALYZE) runAnalyze();
+                else if (h->a == B_UPDATE) { if (!g_updBusy) CreateThread(NULL, 0, updateInstallThread, NULL, 0, NULL); }
+                else if (h->a == B_LAT) { if (confirmBulk(3)) applyLowLatency(); }
+                else if (h->a == B_MCANCEL) { g_welcome = 0; ShowWindow(g_edit, SW_HIDE); SetFocus(g_hwnd); }
+                else if (h->a == B_COPYID) copyId();
                 else if (h->a == B_ACTIVATE) activate();
                 else if (h->a == B_ALLON) { if (confirmBulk(1)) setAll(1); }
                 else if (h->a == B_FPS) { if (confirmBulk(2)) applyRecommended(); }
                 else if (h->a == B_ALLOFF) { if (confirmBulk(0)) setAll(0); }
-                else if (h->a == B_ULTIMATE) { if (!g_pro) { lockedMsg(); } else if (confirmBulk(1)) { setAll(1); g_page = 3; g_scroll = 0; } }
+                else if (h->a == B_ULTIMATE) { if (!g_pro) { lockedMsg(); } else if (confirmBulk(1)) { setAll(1); setPage(3); } }
                 else if (h->a == B_RESTORE) { wcscpy(g_status, L"Working... this can take a few seconds."); CreateThread(NULL, 0, restoreThread, NULL, 0, NULL); }
-                else if (h->a == B_RESTORE + 100) { g_page = 1; g_scroll = 0; }
+                else if (h->a == B_RESTORE + 100) setPage(1);
                 else if (h->a == B_WELCOME) acceptName();
                 break;
         }
@@ -737,7 +884,7 @@ static int hitIndexAt(int mx, int my) {
     POINT p = {mx, my};
     for (int i = nhits - 1; i >= 0; i--) {
         if (!PtInRect(&hits[i].r, p)) continue;
-        if (g_welcome && !(hits[i].kind == K_BTN && hits[i].a == B_WELCOME)) continue;
+        if (g_welcome && !(hits[i].kind == K_BTN && (hits[i].a == B_WELCOME || hits[i].a == B_MCANCEL))) continue;
         if (hits[i].kind != K_NAV && mx < S(250)) continue;
         return i;
     }
@@ -750,15 +897,19 @@ static void clampScroll(void) {
     if (g_scroll < 0) g_scroll = 0;
 }
 
+static void placeEdit(HWND e, int show, RECT r) {
+    if (show && !g_welcome) {
+        RECT cur; GetWindowRect(e, &cur); MapWindowPoints(NULL, g_hwnd, (POINT *)&cur, 2);
+        if (!EqualRect(&r, &cur) || !IsWindowVisible(e)) { MoveWindow(e, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE); ShowWindow(e, SW_SHOWNA); }
+    } else if (IsWindowVisible(e)) ShowWindow(e, SW_HIDE);
+}
 static void placeKeyEdit(void) {
-    if (g_keyShow && !g_welcome && g_page == 7) {
-        RECT r = g_keyRect, cur; GetWindowRect(g_keyEdit, &cur); MapWindowPoints(NULL, g_hwnd, (POINT *)&cur, 2);
-        if (!EqualRect(&r, &cur) || !IsWindowVisible(g_keyEdit)) { MoveWindow(g_keyEdit, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE); ShowWindow(g_keyEdit, SW_SHOWNA); }
-    } else if (IsWindowVisible(g_keyEdit)) ShowWindow(g_keyEdit, SW_HIDE);
+    placeEdit(g_keyEdit, g_keyShow && (g_page == 7 || g_page == 8), g_keyRect);
+    placeEdit(g_chatEdit, g_chatShow && g_page == 6, g_chatRect);
 }
 static WNDPROC oldEdit;
 static LRESULT CALLBACK editProc(HWND h, UINT m, WPARAM w, LPARAM l) {
-    if (m == WM_KEYDOWN && w == VK_RETURN) { if (h == g_keyEdit) { activate(); InvalidateRect(g_hwnd, NULL, FALSE); } else acceptName(); return 0; }
+    if (m == WM_KEYDOWN && w == VK_RETURN) { if (h == g_keyEdit) { if (g_page == 8) doSearch(); else activate(); InvalidateRect(g_hwnd, NULL, FALSE); } else if (h == g_chatEdit) sendChat(); else acceptName(); return 0; }
     if (m == WM_CHAR && w == VK_RETURN) return 0;
     return CallWindowProcW(oldEdit, h, m, w, l);
 }
@@ -768,6 +919,7 @@ static LRESULT CALLBACK wndProc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
     case WM_CREATE: SetTimer(h, 1, 1000, NULL); return 0;
     case WM_TIMER:
+        if (w == 3) { if (GetTickCount() - g_fadeStart > 280) KillTimer(h, 3); InvalidateRect(h, NULL, FALSE); return 0; }
         if (w == 2) {
             if (GetTickCount() - g_animStart > ANIM_MS) { g_anim = 0; KillTimer(h, 2); }
             InvalidateRect(h, NULL, FALSE); return 0;
@@ -837,7 +989,7 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     SetProcessDPIAware();
     HDC sd = GetDC(NULL); g_sc = GetDeviceCaps(sd, LOGPIXELSX) / 96.0; ReleaseDC(NULL, sd);
     for (int i = 0; i < NTWEAKS; i++) { tweaks[i].name = tdefs[i].name; tweaks[i].desc = tdefs[i].desc; }
-    cfgPath(); loadConfig(); loadLicense(); loadLogo();
+    cfgPath(); loadConfig(); loadLicense(); loadLogo(); presetsLoad();
     for (int i = 0; i < NTWEAKS; i++) tweaks[i].on = isTweakOn(i);
     fTitle = mkFont(30, FW_SEMIBOLD); fH2 = mkFont(13, FW_BOLD); fBody = mkFont(15, FW_SEMIBOLD);
     fSmall = mkFont(12, FW_NORMAL); fStat = mkFont(23, FW_SEMIBOLD); fNav = mkFont(16, FW_SEMIBOLD);
@@ -856,6 +1008,10 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     SendMessageW(g_edit, WM_SETFONT, (WPARAM)fStat, TRUE);
     SendMessageW(g_edit, EM_SETLIMITTEXT, 24, 0);
     oldEdit = (WNDPROC)SetWindowLongPtrW(g_edit, GWLP_WNDPROC, (LONG_PTR)editProc);
+    g_chatEdit = CreateWindowW(L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL | WS_BORDER, 0, 0, 10, 10, g_hwnd, NULL, hi, NULL);
+    SendMessageW(g_chatEdit, WM_SETFONT, (WPARAM)fBody, TRUE);
+    SendMessageW(g_chatEdit, EM_SETLIMITTEXT, 200, 0);
+    SetWindowLongPtrW(g_chatEdit, GWLP_WNDPROC, (LONG_PTR)editProc);
     g_keyEdit = CreateWindowW(L"EDIT", L"", WS_CHILD | ES_AUTOHSCROLL | WS_BORDER, 0, 0, 10, 10, g_hwnd, NULL, hi, NULL);
     SendMessageW(g_keyEdit, WM_SETFONT, (WPARAM)fBody, TRUE);
     SendMessageW(g_keyEdit, EM_SETLIMITTEXT, 400, 0);
@@ -866,6 +1022,8 @@ int WINAPI wWinMain(HINSTANCE hi, HINSTANCE hp, PWSTR cmd, int show) {
     st.cpuTemp = -1;
     if (GetPrivateProfileIntW(L"addons", L"a0", 0, g_ini)) { addons[0].on = 1; overlaySet(1); }
     readStats();
+    chatAdd(L"Hi! I'm the Nero Assistant. I run on your PC with no internet needed. Press Analyze my PC and I'll read your live stats and recommend tweaks, or ask me about FPS, ping, input delay or stutter.", 0);
+    CreateThread(NULL, 0, updateCheckThread, NULL, 0, NULL);
     CreateThread(NULL, 0, gpuThread, NULL, 0, NULL);
     if (!g_name[0]) showWelcome();
     MSG msg;

@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s), app=$("#app");
-const state={region:localStorage.region||"ALL",date:new Date().toISOString().slice(0,10)};
+const state={region:localStorage.region||"ALL",date:null,q:""};
 const ICON=`<svg viewBox="0 0 24 24" fill="none" stroke="#5aa2ff" stroke-width="2"><circle cx="12" cy="12" r="10" fill="#10204a"/><path d="M12 6l2 4 4 .6-3 2.9.7 4.1-3.7-2-3.7 2 .7-4.1-3-2.9 4-.6z" fill="#5aa2ff" stroke="none"/></svg>`;
 const pts=n=>`<span class="pts">${ICON}${n.toLocaleString()}</span>`;
 const isLive=t=>t.start<=Date.now()&&Date.now()<t.end;
@@ -8,27 +8,34 @@ const fmtT=ms=>new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digi
 const fmtD=ms=>new Date(ms).toLocaleDateString([],{month:"long",day:"numeric",year:"numeric"});
 const dur=t=>{const m=Math.round((t.end-t.start)/6e4);return Math.floor(m/60)+" hours"+(m%60?" "+m%60+" minutes":"")};
 const regionPills=(cur,fn,all)=>`<div class="pills">${(all?["ALL"]:[]).concat(REGIONS).map(r=>`<span class="pill ${r===cur?"on":""}" data-r="${r}">${r}</span>`).join("")}</div>`;
-const card=t=>`<a class="card" href="#/t/${t.id}"><div class="row"><span class="badge ${isLive(t)?"live":""}">${isLive(t)?"● LIVE":t.region}</span>${pts(t.pts.qual)}</div>
-<h3>${t.name} <span class="meta">[${t.region}]</span></h3><div class="meta">${t.session} · ${t.format}</div><div class="meta">${fmtD(t.start)} · ${fmtT(t.start)}</div></a>`;
-const section=(title,list,empty)=>`<h2>${title} <span class="badge">${list.length}</span></h2>`+(list.length?`<div class="grid">${list.map(card).join("")}</div>`:`<div class="empty">${empty}</div>`);
+const rel=ms=>{const m=Math.round(Math.abs(ms)/6e4),h=Math.round(m/60),d=Math.round(h/24);return m<60?m+" min"+(m===1?"":"s"):h<48?h+" hour"+(h===1?"":"s"):d+" days"};
+const when=t=>isLive(t)?"ends in "+rel(t.end-Date.now()):t.end<Date.now()?"ended "+rel(Date.now()-t.end)+" ago":"in "+rel(t.start-Date.now());
+const ART=[["#0b2a7a","#2f7bff"],["#06122e","#3a6bff"],["#1a0b5e","#5aa2ff"],["#021a3a","#00b4ff"],["#0a1f66","#7a5cff"]];
+const card=(t,small)=>{const c=ART[(t.name.length+t.region.length)%ART.length];
+ return `<a class="tcard ${small?"sm":""}" href="#/t/${t.id}"><div class="art" style="background:linear-gradient(150deg,${c[0]},${c[1]})"><i></i><span class="mark">${t.name.split(" ").map(w=>w[0]).join("").slice(0,3)}</span></div>
+ <span class="chip ${isLive(t)?"lv":""}">${when(t)}</span>${small?`<span class="chip r">${t.matches} Events</span>`:`<span class="chip r">${t.region}</span>`}
+ <div class="cap"><b>${t.name}</b><span>${small?(isLive(t)?"Running: ":"Upcoming: ")+t.session:t.session}</span><em>${ICON}${t.pts.qual}</em></div></a>`};
+const section=(title,list,empty,small,right)=>`<section class="sect"><div class="sh"><h2><span class="chev">⌄</span>${title}</h2><span class="meta">${right||""}</span></div>`+(list.length?`<div class="tgrid ${small?"sm":""}">${list.map(t=>card(t,small)).join("")}</div>`:`<div class="empty">${empty}</div>`)+`</section>`;
 
 function home(){
-  const all=TOURNAMENTS.filter(t=>state.region==="ALL"||t.region===state.region).sort((a,b)=>a.start-b.start);
-  const today=ymd(Date.now());
-  const live=all.filter(isLive);
-  const todays=all.filter(t=>!isLive(t)&&ymd(t.start)===today&&t.end>Date.now());
-  const picked=all.filter(t=>ymd(t.start)===state.date);
-  app.innerHTML=`<div class="bar"><div><h1>Tournaments</h1><div class="meta">Fortnite competitive events, all regions</div></div>
-  <div class="datebox"><button id="prev">‹</button><input type="date" id="date" value="${state.date}"><button id="next">›</button><button id="tod">Today</button></div></div>
-  ${regionPills(state.region,0,true)}
-  ${section("🔴 Live now",live,"No tournaments are live right now.")}
-  ${section("Happening today",todays,"Nothing else scheduled for today.")}
-  ${section("On "+new Date(state.date+"T12:00").toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"}),picked,"No tournaments on this date.")}`;
-  app.querySelectorAll(".pill").forEach(p=>p.onclick=()=>{state.region=localStorage.region=p.dataset.r;home()});
+  const q=(state.q||"").toLowerCase();
+  const all=TOURNAMENTS.filter(t=>(state.region==="ALL"||t.region===state.region)&&(t.name+t.session).toLowerCase().includes(q)).sort((a,b)=>a.start-b.start);
+  const open=all.filter(t=>t.end>Date.now());
+  const quick=open.filter(t=>isLive(t)||t.start-Date.now()<6*H);
+  const rest=state.date?all.filter(t=>ymd(t.start)===state.date):open;
+  app.innerHTML=`<h1>Pump Tournaments</h1>
+  <div class="tools"><input id="q" class="search" placeholder="Search for tournaments" value="${state.q||""}">
+   <div class="datebox"><button id="prev">‹</button><input type="date" id="date" value="${state.date||ymd(Date.now())}"><button id="next">›</button><button id="tod">${state.date?"Show all":"Today"}</button></div>
+   <div class="regs">${["ALL"].concat(REGIONS).map(r=>`<span class="rg ${r===state.region?"on":""}" data-r="${r}">${r}</span>`).join("")}</div></div>
+  ${section("Quick Access",quick,"Nothing live or starting in the next few hours.",false,"Live + starting soon")}
+  ${section(state.date?"Events on "+new Date(state.date+"T12:00").toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"}):"Upcoming Events",rest,"No tournaments on this date.",true,"Pick a date to see other days")}`;
+  app.querySelectorAll(".rg").forEach(p=>p.onclick=()=>{state.region=p.dataset.r;try{localStorage.region=p.dataset.r}catch(e){}home()});
+  $("#q").oninput=e=>{state.q=e.target.value;const p=e.target.selectionStart;home();const n=$("#q");n.focus();n.setSelectionRange(p,p)};
   const setD=d=>{state.date=d;home()};
   $("#date").onchange=e=>e.target.value&&setD(e.target.value);
-  const shift=n=>{const d=new Date(state.date+"T12:00");d.setDate(d.getDate()+n);setD(ymd(d))};
-  $("#prev").onclick=()=>shift(-1);$("#next").onclick=()=>shift(1);$("#tod").onclick=()=>setD(ymd(Date.now()));
+  const base=()=>state.date||ymd(Date.now());
+  const shift=n=>{const d=new Date(base()+"T12:00");d.setDate(d.getDate()+n);setD(ymd(d))};
+  $("#prev").onclick=()=>shift(-1);$("#next").onclick=()=>shift(1);$("#tod").onclick=()=>setD(state.date?null:ymd(Date.now()));
 }
 
 const rnd=(s,i)=>{let x=Math.sin(s*9301+i*49297)*233280;return x-Math.floor(x)};
